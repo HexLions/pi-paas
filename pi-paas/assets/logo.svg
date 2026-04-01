@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <style>
+      .bg { fill: #1a1a2e; }
+      .frame { fill: #16213e; }
+      .pi-body { fill: #4a9eff; }
+      .pi-light { fill: #7bb8ff; }
+      .pi-dark { fill: #2d7ed9; }
+      .server { fill: #34d399; }
+      .server-dark { fill: #1d9e75; }
+      .server-light { fill: #6ee7b7; }
+      .led-on { fill: #f87171; }
+      .led-green { fill: #34d399; }
+      .led-amber { fill: #fb923c; }
+      .purple { fill: #a78bfa; }
+      .purple-dark { fill: #7c3aed; }
+      .gray { fill: #4b5563; }
+      .gray-light { fill: #6b7280; }
+      .white { fill: #e5e7eb; }
+      .shadow { fill: rgba(0,0,0,0.3); }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" width="512" height="512" rx="64"/>
+
+  <!-- Pixel grid shadow under the π -->
+  <rect class="shadow" x="128" y="184" width="256" height="24" rx="0"/>
+
+  <!-- Big π symbol - pixel art style -->
+  <!-- Top bar -->
+  <rect class="pi-body" x="128" y="128" width="256" height="32"/>
+  <rect class="pi-light" x="128" y="128" width="256" height="8"/>
+  <rect class="pi-dark" x="128" y="152" width="256" height="8"/>
+
+  <!-- Left serifs -->
+  <rect class="pi-body" x="112" y="128" width="32" height="16"/>
+  <rect class="pi-body" x="368" y="128" width="32" height="16"/>
+
+  <!-- Left leg -->
+  <rect class="pi-body" x="176" y="160" width="32" height="160"/>
+  <rect class="pi-light" x="176" y="160" width="8" height="160"/>
+  <rect class="pi-dark" x="200" y="160" width="8" height="160"/>
+
+  <!-- Right leg -->
+  <rect class="pi-body" x="304" y="160" width="32" height="128"/>
+  <rect class="pi-light" x="304" y="160" width="8" height="128"/>
+  <rect class="pi-dark" x="328" y="160" width="8" height="128"/>
+
+  <!-- Right leg curl -->
+  <rect class="pi-body" x="288" y="288" width="32" height="32"/>
+  <rect class="pi-body" x="272" y="304" width="32" height="32"/>
+  <rect class="pi-body" x="272" y="320" width="16" height="16"/>
+
+  <!-- Server rack / platform under π -->
+  <!-- Main server box -->
+  <rect class="frame" x="96" y="352" width="320" height="64" rx="8"/>
+  <rect class="server-dark" x="104" y="360" width="304" height="48" rx="4"/>
+
+  <!-- Server slots -->
+  <rect class="server" x="120" y="368" width="80" height="12" rx="2"/>
+  <rect class="server" x="120" y="388" width="80" height="12" rx="2"/>
+
+  <rect class="server" x="216" y="368" width="80" height="12" rx="2"/>
+  <rect class="server" x="216" y="388" width="80" height="12" rx="2"/>
+
+  <rect class="server" x="312" y="368" width="80" height="12" rx="2"/>
+  <rect class="server" x="312" y="388" width="80" height="12" rx="2"/>
+
+  <!-- LED indicators -->
+  <circle class="led-on" cx="136" cy="374" r="3"/>
+  <circle class="led-green" cx="148" cy="374" r="3"/>
+  <circle class="led-amber" cx="136" cy="394" r="3"/>
+  <circle class="led-green" cx="148" cy="394" r="3"/>
+
+  <circle class="led-green" cx="232" cy="374" r="3"/>
+  <circle class="led-green" cx="244" cy="374" r="3"/>
+  <circle class="led-on" cx="232" cy="394" r="3"/>
+  <circle class="led-green" cx="244" cy="394" r="3"/>
+
+  <circle class="led-green" cx="328" cy="374" r="3"/>
+  <circle class="led-green" cx="340" cy="374" r="3"/>
+  <circle class="led-green" cx="328" cy="394" r="3"/>
+  <circle class="led-amber" cx="340" cy="394" r="3"/>
+
+  <!-- Deploy arrows / upload indicators -->
+  <!-- Arrow 1 -->
+  <rect class="purple" x="248" y="80" width="16" height="40"/>
+  <polygon class="purple" points="240,80 272,80 256,56"/>
+  <rect class="purple-dark" x="256" y="80" width="8" height="40"/>
+
+  <!-- Small pixel decorations -->
+  <rect class="gray" x="96" y="424" width="320" height="8" rx="2"/>
+
+  <!-- Pixel dots decoration top corners -->
+  <rect class="pi-body" x="80" y="80" width="8" height="8" opacity="0.5"/>
+  <rect class="pi-body" x="96" y="80" width="8" height="8" opacity="0.3"/>
+  <rect class="pi-body" x="80" y="96" width="8" height="8" opacity="0.3"/>
+
+  <rect class="pi-body" x="424" y="80" width="8" height="8" opacity="0.5"/>
+  <rect class="pi-body" x="408" y="80" width="8" height="8" opacity="0.3"/>
+  <rect class="pi-body" x="424" y="96" width="8" height="8" opacity="0.3"/>
+
+  <!-- Text: PaaS -->
+  <text x="256" y="464" text-anchor="middle" font-family="monospace" font-weight="bold" font-size="36" fill="#4a9eff" letter-spacing="8">Pi-PaaS</text>
+</svg>

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pi-PaaS · Control Panel</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/theme/one-dark.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/dialog/dialog.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/fold/foldgutter.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/hint/show-hint.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/xml/xml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/htmlmixed/htmlmixed.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/javascript/javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/css/css.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/python/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/markdown/markdown.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/sql/sql.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/shell/shell.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/yaml/yaml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/edit/closebrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/edit/closetag.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/edit/matchtags.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/comment/comment.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/search.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/searchcursor.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/jump-to-line.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/dialog/dialog.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/selection/active-line.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/fold/foldcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/fold/foldgutter.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/fold/brace-fold.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/fold/xml-fold.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/fold/indent-fold.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/hint/show-hint.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/hint/html-hint.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/hint/css-hint.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/hint/javascript-hint.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{--bg:#0a0a0f;--card:#12121a;--card2:#1a1a25;--input:#0e0e16;--border:#1e1e2e;--text:#e4e4ef;--dim:#6b6b80;--muted:#44445a;--accent:#4a9eff;--glow:rgba(74,158,255,0.15);--green:#34d399;--green2:rgba(52,211,153,0.12);--red:#f87171;--red2:rgba(248,113,113,0.12);--orange:#fb923c;--purple:#a78bfa;--r:10px;--rs:6px}
+    body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;min-height:100vh}
+    .hdr{padding:20px 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+    .hdr-l{display:flex;align-items:center;gap:12px}
+    .logo{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),#7c3aed);border-radius:8px;display:flex;align-items:center;justify-content:center;font:700 16px 'JetBrains Mono',monospace;color:#fff}
+    .hdr h1{font-size:18px;font-weight:700} .hdr h1 b{color:var(--accent)}
+    .ip{font:12px 'JetBrains Mono',monospace;color:var(--dim);background:var(--card);padding:5px 10px;border-radius:var(--rs);border:1px solid var(--border)}
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:1px solid var(--border);border-radius:var(--rs);background:var(--card);color:var(--text);font:500 13px inherit;cursor:pointer;transition:.2s}
+    .btn:hover{background:var(--card2);border-color:var(--muted)} .btn-p{background:var(--accent);border-color:var(--accent);color:#fff} .btn-p:hover{background:#3b8be8}
+    .btn-d{color:var(--red)} .btn-d:hover{background:var(--red2);border-color:var(--red)} .btn-s{padding:5px 10px;font-size:12px}
+    .main{max-width:1100px;margin:0 auto;padding:28px}
+    .bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+    .bar h2{font-size:15px;font-weight:600;color:var(--dim)} .cnt{font-family:'JetBrains Mono',monospace;color:var(--accent)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:18px;position:relative;overflow:hidden;transition:.2s}
+    .card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);opacity:0;transition:.2s}
+    .card:hover{border-color:var(--muted)} .card:hover::before{opacity:1}
+    .card-h{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+    .card-name{font-size:15px;font-weight:600} .card-ver{font:11px 'JetBrains Mono',monospace;color:var(--muted)}
+    .badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:16px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+    .badge.on{background:var(--green2);color:var(--green)} .badge.off{background:var(--red2);color:var(--red)}
+    .dot{width:5px;height:5px;border-radius:50%;background:currentColor} .badge.on .dot{animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .meta{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+    .tag{font:11px 'JetBrains Mono',monospace;padding:2px 7px;border-radius:4px;background:var(--input);color:var(--dim);border:1px solid var(--border)}
+    .tag.node{color:var(--green);border-color:rgba(52,211,153,.2)} .tag.python{color:var(--orange);border-color:rgba(251,146,60,.2)}
+    .tag.static{color:var(--accent);border-color:rgba(74,158,255,.2)} .tag.react{color:var(--purple);border-color:rgba(167,139,250,.2)}
+    .card-url{font:12px 'JetBrains Mono',monospace;color:var(--accent);text-decoration:none;display:block;margin-bottom:12px;word-break:break-all}
+    .card-url:hover{text-decoration:underline} .acts{display:flex;gap:6px;flex-wrap:wrap}
+    .ov{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:1000} .ov.on{display:flex}
+    .mod{background:var(--card);border:1px solid var(--border);border-radius:14px;width:90%;max-width:520px;max-height:90vh;overflow-y:auto;padding:24px;position:relative}
+    .mod h2{font-size:17px;font-weight:700;margin-bottom:20px} .mod-x{position:absolute;top:14px;right:14px;background:none;border:none;color:var(--dim);font-size:20px;cursor:pointer;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:var(--rs)} .mod-x:hover{background:var(--input);color:var(--text)}
+    .fg{margin-bottom:16px} .fg label{display:block;font-size:13px;font-weight:500;color:var(--dim);margin-bottom:5px}
+    .fg input,.fg select{width:100%;padding:9px 12px;background:var(--input);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:14px inherit}
+    .fg input:focus,.fg select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)} .fg select option{background:var(--card)}
+    .uz{border:2px dashed var(--border);border-radius:var(--r);padding:28px;text-align:center;cursor:pointer;transition:.2s;position:relative}
+    .uz:hover,.uz.drag{border-color:var(--accent);background:var(--glow)} .uz input{position:absolute;inset:0;opacity:0;cursor:pointer}
+    .uz-i{font-size:28px;margin-bottom:6px} .uz-t{font-size:13px;color:var(--dim)} .uz-t b{color:var(--accent)}
+    .uz-f{font:12px 'JetBrains Mono',monospace;color:var(--green);margin-top:6px}
+    .logs-c{background:var(--input);border:1px solid var(--border);border-radius:var(--rs);padding:14px;font:12px/1.6 'JetBrains Mono',monospace;color:var(--dim);max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+    .empty{text-align:center;padding:50px 20px;color:var(--dim)} .empty-i{font-size:42px;margin-bottom:14px} .empty h3{font-size:17px;color:var(--text);margin-bottom:6px} .empty p{font-size:13px;max-width:380px;margin:0 auto;line-height:1.6}
+    .toasts{position:fixed;bottom:20px;right:20px;z-index:2000;display:flex;flex-direction:column;gap:6px}
+    .toast{background:var(--card);border:1px solid var(--border);border-radius:var(--rs);padding:10px 16px;font-size:13px;display:flex;align-items:center;gap:8px;animation:sIn .3s;min-width:260px}
+    .toast.ok{border-left:3px solid var(--green)} .toast.err{border-left:3px solid var(--red)}
+    @keyframes sIn{from{transform:translateX(80px);opacity:0}to{transform:translateX(0);opacity:1}}
+    .spin{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:sp .6s linear infinite;display:inline-block}
+    @keyframes sp{to{transform:rotate(360deg)}}
+    @media(max-width:640px){.hdr{padding:14px} .main{padding:14px} .grid{grid-template-columns:1fr} .bar{flex-direction:column;gap:10px;align-items:flex-start}}
+    /* Port picker */
+    .port-row{display:flex;gap:8px;align-items:center}
+    .port-row input{flex:1} .port-row .btn-s{flex-shrink:0}
+    .port-info{font:11px 'JetBrains Mono',monospace;margin-top:4px;min-height:16px}
+    .port-info.ok{color:var(--green)} .port-info.no{color:var(--red)} .port-info.loading{color:var(--dim)}
+    /* File Manager */
+    .fm{display:flex;height:70vh;min-height:400px;border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+    .ft{width:240px;min-width:200px;background:var(--bg);border-right:1px solid var(--border);overflow-y:auto;padding:6px 0}
+    .ft-i{display:flex;align-items:center;gap:5px;padding:3px 10px;font-size:12px;cursor:pointer;color:var(--dim);transition:.15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ft-i:hover{background:var(--card);color:var(--text)} .ft-i.act{background:var(--glow);color:var(--accent)} .ft-i .ic{font-size:12px;flex-shrink:0}
+    .ft-d{padding:3px 10px;font-size:12px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none}
+    .ft-d:hover{background:var(--card)} .ft-d .ar{font-size:9px;transition:.2s} .ft-d.cl .ar{transform:rotate(-90deg)} .ft-d.cl+.ft-ch{display:none} .ft-ch{padding-left:14px}
+    .fe{flex:1;display:flex;flex-direction:column;min-width:0}
+    .et{display:flex;align-items:center;justify-content:space-between;padding:5px 12px;background:var(--card);border-bottom:1px solid var(--border);gap:6px}
+    .ef{font:12px 'JetBrains Mono',monospace;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:5px}
+    .ea{display:flex;gap:5px;flex-shrink:0}
+    #ec{flex:1;overflow:hidden} #ec .CodeMirror{height:100%;font-family:'JetBrains Mono',monospace!important;font-size:13px!important;line-height:1.6!important;background:#282c34}
+    #ec .CodeMirror-gutters{background:#21252b;border-right:1px solid #333} #ec .CodeMirror-linenumber{color:#555;padding:0 6px}
+    #ec .CodeMirror-activeline-background{background:rgba(74,158,255,.06)!important} #ec .CodeMirror-matchingbracket{color:var(--accent)!important;background:rgba(74,158,255,.25)}
+    #ec .CodeMirror-selected{background:rgba(74,158,255,.2)!important} #ec .CodeMirror-cursor{border-left-color:var(--accent)!important}
+    #ec .CodeMirror-dialog{background:#21252b;border-bottom:1px solid #333;color:var(--text)} #ec .CodeMirror-dialog input{background:var(--input);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px}
+    #ec .CodeMirror-hints{background:var(--card);border:1px solid var(--border);border-radius:6px;font:12px 'JetBrains Mono',monospace} #ec .CodeMirror-hint{color:var(--text);padding:3px 6px} #ec .CodeMirror-hint-active{background:var(--glow);color:var(--accent)}
+    .ee{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;flex-direction:column;gap:6px}
+    .ee .sh{font-size:10px;color:var(--muted);margin-top:10px;text-align:center;line-height:2}
+    .ee .sh kbd{background:var(--card);border:1px solid var(--border);padding:1px 5px;border-radius:3px;font:10px 'JetBrains Mono',monospace}
+    .es{padding:3px 12px;background:#21252b;border-top:1px solid #333;font:10px 'JetBrains Mono',monospace;color:var(--muted);display:flex;justify-content:space-between;gap:14px}
+    .nf{display:flex;gap:5px;padding:6px;border-top:1px solid var(--border);background:var(--bg)}
+    .nf input{flex:1;padding:4px 8px;background:var(--input);border:1px solid var(--border);border-radius:4px;color:var(--text);font:11px 'JetBrains Mono',monospace}
+    .nf input:focus{outline:none;border-color:var(--accent)} .ud{width:6px;height:6px;border-radius:50%;background:var(--orange);display:inline-block}
+    .lb{font-size:10px;padding:1px 5px;border-radius:3px;background:var(--input);color:var(--muted);border:1px solid var(--border);text-transform:uppercase;letter-spacing:.5px}
+  </style>
+</head>
+<body>
+  <header class="hdr"><div class="hdr-l"><div class="logo">π</div><h1>Pi-<b>PaaS</b></h1></div><span class="ip" id="sip">...</span></header>
+  <main class="main">
+    <div class="bar"><h2>Applications <span class="cnt" id="cnt">(0)</span></h2>
+      <button class="btn btn-p" onclick="openDeploy()">+ Deploy App</button>
+    </div>
+    <div id="list" class="grid"><div class="empty"><div class="empty-i">📦</div><h3>No apps deployed</h3><p>Click "Deploy App" to upload your first web application.</p></div></div>
+  </main>
+
+  <!-- Deploy -->
+  <div class="ov" id="dMod"><div class="mod">
+    <button class="mod-x" onclick="closeM('dMod')">×</button>
+    <h2>🚀 Deploy New App</h2>
+    <div class="fg"><label>App Name</label><input id="dName" placeholder="e.g. my-portfolio" autocomplete="off"></div>
+    <div class="fg"><label>App Type</label><select id="dType"><option value="static">HTML/CSS/JS Static</option><option value="node">Node.js</option><option value="python">Python / Flask</option><option value="react">React / Vue (build)</option></select></div>
+    <div class="fg"><label>Database</label><select id="dDb"><option value="none">None</option><option value="sqlite">SQLite</option><option value="postgres">PostgreSQL</option></select></div>
+    <div class="fg"><label>Port</label>
+      <div class="port-row"><input type="number" id="dPort" min="3001" max="3200" placeholder="Auto-assign"><button class="btn btn-s" onclick="checkPortAvail('dPort','dPortInfo')">Check</button></div>
+      <div class="port-info" id="dPortInfo"></div>
+    </div>
+    <div class="fg"><label>Project File</label><div class="uz" id="dZone"><input type="file" id="dFile" accept=".zip,.html,.htm"><div class="uz-i">📁</div><div class="uz-t">Drag a <b>.zip</b> or <b>.html</b> file</div><div class="uz-f" id="dFn"></div></div></div>
+    <button class="btn btn-p" style="width:100%;justify-content:center;margin-top:6px" onclick="deploy()" id="dBtn">🚀 Deploy</button>
+  </div></div>
+
+  <!-- Update -->
+  <div class="ov" id="uMod"><div class="mod">
+    <button class="mod-x" onclick="closeM('uMod')">×</button>
+    <h2>📦 Update: <span id="uName"></span></h2>
+    <div class="fg"><label>New Port (optional)</label>
+      <div class="port-row"><input type="number" id="uPort" min="3001" max="3200" placeholder="Keep current"><button class="btn btn-s" onclick="checkPortAvail('uPort','uPortInfo')">Check</button></div>
+      <div class="port-info" id="uPortInfo"></div>
+    </div>
+    <div class="fg"><label>New file</label><div class="uz" id="uZone"><input type="file" id="uFile" accept=".zip,.html,.htm"><div class="uz-i">📁</div><div class="uz-t">Drag new <b>.zip</b> or <b>.html</b></div><div class="uz-f" id="uFn"></div></div></div>
+    <p style="font-size:11px;color:var(--dim);margin-bottom:14px">⚠️ SQLite database will be preserved.</p>
+    <button class="btn btn-p" style="width:100%;justify-content:center" onclick="update()" id="uBtn">📦 Upload Update</button>
+  </div></div>
+
+  <!-- Logs -->
+  <div class="ov" id="lMod"><div class="mod" style="max-width:700px"><button class="mod-x" onclick="closeM('lMod')">×</button><h2>📋 Logs: <span id="lName"></span></h2><div class="logs-c" id="lC">Loading...</div><button class="btn btn-s" style="margin-top:10px" onclick="refreshLogs()">🔄 Refresh</button></div></div>
+
+  <!-- Delete -->
+  <div class="ov" id="xMod"><div class="mod" style="max-width:400px"><button class="mod-x" onclick="closeM('xMod')">×</button><h2>⚠️ Confirm Deletion</h2><p style="color:var(--dim);margin-bottom:18px;line-height:1.6">Delete <strong id="xName"></strong>? All files and data will be permanently removed.</p><div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn" onclick="closeM('xMod')">Cancel</button><button class="btn btn-d" onclick="confirmDel()" id="xBtn">Delete</button></div></div></div>
+
+  <!-- File Editor -->
+  <div class="ov" id="eMod"><div class="mod" style="max-width:1100px;padding:0;display:flex;flex-direction:column;height:90vh">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 18px;border-bottom:1px solid var(--border)"><h2 style="margin:0;font-size:14px">📂 <span id="eApp" style="color:var(--accent)"></span></h2><button class="mod-x" style="position:static" onclick="closeM('eMod')">×</button></div>
+    <div class="fm">
+      <div class="ft" id="fTree"><div style="padding:18px;color:var(--muted);font-size:11px">Loading...</div></div>
+      <div class="fe">
+        <div class="et" id="eTb" style="display:none"><div class="ef"><span id="eFn"></span><span id="eUn"></span><span class="lb" id="eLn"></span></div><div class="ea"><button class="btn btn-s" onclick="saveFile()" id="eS" disabled title="Ctrl+S">💾 Save</button><button class="btn btn-s btn-d" onclick="delFile()" title="Delete file">🗑</button></div></div>
+        <div id="ec" style="display:none"></div>
+        <div class="ee" id="eE"><span>Select a file from the list</span><div class="sh"><kbd>Ctrl</kbd>+<kbd>S</kbd> save · <kbd>Ctrl</kbd>+<kbd>F</kbd> find · <kbd>Ctrl</kbd>+<kbd>H</kbd> replace<br><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Tab</kbd> indent · <kbd>Ctrl</kbd>+<kbd>/</kbd> comment</div></div>
+        <div class="es" id="eSt" style="display:none"><span id="eFi"></span><span id="eCu">Ln 1, Col 1</span><span id="eSs"></span></div>
+      </div>
+    </div>
+    <div class="nf"><input id="nfP" placeholder="new-file.html (or folder/file.js)"><button class="btn btn-s" onclick="newFile()">+ New File</button></div>
+  </div></div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script>
+    let curU=null,curX=null,curL=null,curE=null,curF=null,origC=null,dirty=false;
+    window.cmView=null;
+
+    async function api(m,u,b,fd=false){const o={method:m};if(b){if(fd)o.body=b;else{o.headers={'Content-Type':'application/json'};o.body=JSON.stringify(b)}}return(await fetch(u,o)).json()}
+
+    // --- Port check ---
+    async function checkPortAvail(inputId,infoId){
+      const p=parseInt(document.getElementById(inputId).value);
+      const info=document.getElementById(infoId);
+      if(!p||p<3001||p>3200){info.className='port-info no';info.textContent='Port must be between 3001-3200';return}
+      info.className='port-info loading';info.textContent='Checking...';
+      try{
+        const ports=await api('GET','/api/ports');
+        const found=ports.find(x=>x.port===p);
+        if(!found||found.available){info.className='port-info ok';info.textContent=`✓ Port ${p} is available`}
+        else if(found.usedBy==='app'){info.className='port-info no';info.textContent=`✗ Port ${p} used by "${found.appName}"`}
+        else{info.className='port-info no';info.textContent=`✗ Port ${p} used by system process`}
+      }catch(e){info.className='port-info no';info.textContent='Error checking port'}
+    }
+
+    // --- Load Apps ---
+    async function loadApps(){
+      try{
+        const apps=await api('GET','/api/apps');const el=document.getElementById('list');
+        document.getElementById('cnt').textContent=`(${apps.length})`;
+        if(!apps.length){el.innerHTML='<div class="empty" style="grid-column:1/-1"><div class="empty-i">📦</div><h3>No apps deployed</h3><p>Click "Deploy App" to upload your first web application.</p></div>';return}
+        el.innerHTML=apps.map(a=>{
+          const tl={static:'HTML',node:'Node.js',python:'Python',react:'React'}[a.type]||a.type;
+          const dl={none:'',sqlite:'SQLite',postgres:'PostgreSQL'}[a.dbType]||'';
+          const on=a.status==='running';
+          return`<div class="card"><div class="card-h"><div><div class="card-name">${esc(a.name)}</div><div class="card-ver">v${a.version||1} · port ${a.port}</div></div><span class="badge ${on?'on':'off'}"><span class="dot"></span>${on?'Online':'Offline'}</span></div><div class="meta"><span class="tag ${a.type}">${tl}</span>${dl?`<span class="tag">${dl}</span>`:''}</div><a class="card-url" href="${a.url}" target="_blank">${a.url}</a><div class="acts">${on?`<button class="btn btn-s" onclick="act('${a.id}','stop')">⏹ Stop</button><button class="btn btn-s" onclick="act('${a.id}','restart')">🔄</button>`:`<button class="btn btn-s" onclick="act('${a.id}','start')">▶ Start</button>`}<button class="btn btn-s" onclick="openUpd('${a.id}','${esc(a.name)}',${a.port})">📦 Update</button><button class="btn btn-s" onclick="openFM('${a.id}','${esc(a.name)}')">📂 Files</button><button class="btn btn-s" onclick="openLog('${a.id}','${esc(a.name)}')">📋</button><button class="btn btn-s btn-d" onclick="openDel('${a.id}','${esc(a.name)}')">🗑</button></div></div>`
+        }).join('')}catch(e){console.error(e)}
+    }
+
+    // --- Deploy ---
+    function openDeploy(){document.getElementById('dName').value='';document.getElementById('dFile').value='';document.getElementById('dFn').textContent='';document.getElementById('dPort').value='';document.getElementById('dPortInfo').textContent='';document.getElementById('dMod').classList.add('on')}
+    async function deploy(){
+      const n=document.getElementById('dName').value.trim(),t=document.getElementById('dType').value,d=document.getElementById('dDb').value,f=document.getElementById('dFile').files[0],p=document.getElementById('dPort').value;
+      if(!n)return toast('Enter a name','err');if(!f)return toast('Select a file','err');
+      const btn=document.getElementById('dBtn');btn.innerHTML='<span class="spin"></span> Deploying...';btn.disabled=true;
+      const fd=new FormData();fd.append('name',n);fd.append('type',t);fd.append('dbType',d);fd.append('zipfile',f);if(p)fd.append('port',p);
+      try{const r=await api('POST','/api/apps',fd,true);if(r.error)throw new Error(r.error);toast(n+' deployed on port '+r.port,'ok');closeM('dMod');loadApps()}
+      catch(e){toast(e.message,'err')}finally{btn.innerHTML='🚀 Deploy';btn.disabled=false}
+    }
+
+    // --- Update ---
+    function openUpd(id,name,port){curU=id;document.getElementById('uName').textContent=name;document.getElementById('uFile').value='';document.getElementById('uFn').textContent='';document.getElementById('uPort').value='';document.getElementById('uPort').placeholder=`Current: ${port}`;document.getElementById('uPortInfo').textContent='';document.getElementById('uMod').classList.add('on')}
+    async function update(){
+      const f=document.getElementById('uFile').files[0];const p=document.getElementById('uPort').value;
+      if(!f&&!p)return toast('Select a file or change port','err');
+      const btn=document.getElementById('uBtn');btn.innerHTML='<span class="spin"></span>';btn.disabled=true;
+      const fd=new FormData();if(f)fd.append('zipfile',f);if(p)fd.append('port',p);
+      try{const r=await api('PUT',`/api/apps/${curU}`,fd,true);if(r.error)throw new Error(r.error);toast('App updated!','ok');closeM('uMod');loadApps()}
+      catch(e){toast(e.message,'err')}finally{btn.innerHTML='📦 Upload Update';btn.disabled=false}
+    }
+
+    // --- Delete ---
+    function openDel(id,name){curX=id;document.getElementById('xName').textContent=name;document.getElementById('xMod').classList.add('on')}
+    async function confirmDel(){
+      const btn=document.getElementById('xBtn');btn.innerHTML='<span class="spin"></span>';btn.disabled=true;
+      try{const r=await api('DELETE',`/api/apps/${curX}`);if(r.error)throw new Error(r.error);toast('App deleted','ok');closeM('xMod');loadApps()}
+      catch(e){toast(e.message,'err')}finally{btn.innerHTML='Delete';btn.disabled=false}
+    }
+
+    async function act(id,a){try{const r=await api('POST',`/api/apps/${id}/${a}`);if(r.error)throw new Error(r.error);toast('App '+(a==='start'?'started':a==='stop'?'stopped':'restarted'),'ok');loadApps()}catch(e){toast(e.message,'err')}}
+
+    // --- Logs ---
+    function openLog(id,name){curL=id;document.getElementById('lName').textContent=name;document.getElementById('lC').textContent='Loading...';document.getElementById('lMod').classList.add('on');refreshLogs()}
+    async function refreshLogs(){try{const r=await api('GET',`/api/apps/${curL}/logs`);const el=document.getElementById('lC');el.textContent=r.logs||'No logs';el.scrollTop=el.scrollHeight}catch{document.getElementById('lC').textContent='Error'}}
+
+    // --- File Manager ---
+    function openFM(id,name){curE=id;curF=null;dirty=false;document.getElementById('eApp').textContent=name;document.getElementById('eTb').style.display='none';document.getElementById('ec').style.display='none';document.getElementById('eE').style.display='flex';document.getElementById('eSt').style.display='none';document.getElementById('nfP').value='';document.getElementById('eMod').classList.add('on');loadTree()}
+    async function loadTree(){const el=document.getElementById('fTree');el.innerHTML='<div style="padding:16px;color:var(--muted);font-size:11px">Loading...</div>';try{const r=await api('GET',`/api/apps/${curE}/files`);if(!r.files||!r.files.length){el.innerHTML='<div style="padding:16px;color:var(--muted);font-size:11px">No files</div>';return}el.innerHTML=rTree(r.files,0)}catch{el.innerHTML='<div style="padding:16px;color:var(--red);font-size:11px">Error</div>'}}
+    function rTree(items,d){let h='';for(const i of items){const p=d*12;if(i.type==='dir')h+=`<div class="ft-d" style="padding-left:${10+p}px" onclick="this.classList.toggle('cl')"><span class="ar">▾</span>📁 ${esc(i.name)}</div><div class="ft-ch">${rTree(i.children||[],d+1)}</div>`;else{const ic=fIcon(i.ext),ac=curF===i.path?'act':'';h+=`<div class="ft-i ${ac}" style="padding-left:${10+p}px" onclick="openF('${escA(i.path)}')" title="${esc(i.path)}"><span class="ic">${ic}</span>${esc(i.name)}</div>`}}return h}
+    function fIcon(e){return{html:'🌐',htm:'🌐',css:'🎨',js:'⚡',jsx:'⚛️',ts:'📘',json:'📋',md:'📝',txt:'📄',py:'🐍',xml:'📰',svg:'🖼️',yml:'⚙️',yaml:'⚙️',sh:'🔧',sql:'🗃️',csv:'📊',env:'🔐'}[e]||'📄'}
+    function langN(e){return{html:'HTML',htm:'HTML',css:'CSS',js:'JS',jsx:'JSX',ts:'TS',json:'JSON',md:'MD',txt:'TXT',py:'Python',xml:'XML',svg:'SVG',yml:'YAML',yaml:'YAML',sh:'Shell',sql:'SQL',csv:'CSV'}[e]||e?.toUpperCase()||'?'}
+    function getMode(e){return{html:'htmlmixed',htm:'htmlmixed',css:'css',js:'javascript',jsx:'javascript',ts:'javascript',json:{name:'javascript',json:true},py:'python',md:'markdown',xml:'xml',svg:'xml',sql:'sql',sh:'shell',yml:'yaml',yaml:'yaml'}[e]||'text/plain'}
+
+    async function openF(fp){
+      if(dirty&&curF!==fp&&!confirm('Unsaved changes. Continue?'))return;
+      curF=fp;dirty=false;const ext=fp.split('.').pop().toLowerCase();
+      document.getElementById('eTb').style.display='flex';document.getElementById('ec').style.display='block';document.getElementById('eE').style.display='none';document.getElementById('eSt').style.display='flex';
+      document.getElementById('eFn').textContent=fp;document.getElementById('eUn').innerHTML='';document.getElementById('eLn').textContent=langN(ext);document.getElementById('eS').disabled=true;document.getElementById('eSs').textContent='';
+      try{const r=await api('GET',`/api/apps/${curE}/files/${fp}`);if(r.binary){destroyCM();document.getElementById('ec').innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted)">Binary file — ${fmtS(r.size)}</div>`;document.getElementById('eFi').textContent=`Binary · ${fmtS(r.size)}`}else{origC=r.content;document.getElementById('eFi').textContent=`${langN(ext)} · ${fmtS(r.size)}`;cmSetup(r.content,ext)}}catch(e){document.getElementById('ec').innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red)">Error</div>`}
+      loadTree()
+    }
+
+    function cmSetup(content,ext){const c=document.getElementById('ec');c.innerHTML='';if(window.cmView){window.cmView.toTextArea();window.cmView=null}const ta=document.createElement('textarea');c.appendChild(ta);window.cmView=CodeMirror.fromTextArea(ta,{value:content,mode:getMode(ext),theme:'one-dark',lineNumbers:true,lineWrapping:true,matchBrackets:true,matchTags:{bothTags:true},autoCloseBrackets:true,autoCloseTags:true,foldGutter:true,gutters:['CodeMirror-linenumbers','CodeMirror-foldgutter'],styleActiveLine:true,indentUnit:2,tabSize:2,indentWithTabs:false,extraKeys:{'Ctrl-S':()=>{if(dirty)saveFile()},'Cmd-S':()=>{if(dirty)saveFile()},'Ctrl-/':'toggleComment','Cmd-/':'toggleComment','Ctrl-Space':'autocomplete',Tab:cm=>{cm.somethingSelected()?cm.indentSelection('add'):cm.replaceSelection('  ','end')},'Shift-Tab':cm=>{cm.indentSelection('subtract')},'Ctrl-J':'toMatchingTag'}});window.cmView.setValue(content);window.cmView.on('change',()=>{const c=window.cmView.getValue();dirty=c!==origC;document.getElementById('eS').disabled=!dirty;document.getElementById('eSs').textContent=dirty?'● Unsaved':'';document.getElementById('eUn').innerHTML=dirty?'<span class="ud"></span>':''});window.cmView.on('cursorActivity',()=>{const p=window.cmView.getCursor();document.getElementById('eCu').textContent=`Ln ${p.line+1}, Col ${p.ch+1}`});setTimeout(()=>{window.cmView.refresh();window.cmView.focus()},50)}
+    function destroyCM(){if(window.cmView){window.cmView.toTextArea();window.cmView=null}}
+
+    async function saveFile(){if(!curF||!curE)return;const content=window.cmView?window.cmView.getValue():'';const btn=document.getElementById('eS');btn.innerHTML='<span class="spin"></span>';btn.disabled=true;try{const r=await api('PUT',`/api/apps/${curE}/files/${curF}`,{content});if(r.error)throw new Error(r.error);origC=content;dirty=false;document.getElementById('eSs').textContent='✓ Saved';document.getElementById('eUn').innerHTML='';toast('File saved','ok')}catch(e){toast(e.message,'err')}finally{btn.innerHTML='💾 Save';btn.disabled=!dirty}}
+    async function delFile(){if(!curF||!confirm(`Delete ${curF}?`))return;try{const r=await api('DELETE',`/api/apps/${curE}/files/${curF}`);if(r.error)throw new Error(r.error);toast('File deleted','ok');curF=null;dirty=false;destroyCM();document.getElementById('eTb').style.display='none';document.getElementById('ec').style.display='none';document.getElementById('eE').style.display='flex';document.getElementById('eSt').style.display='none';loadTree()}catch(e){toast(e.message,'err')}}
+    async function newFile(){const fp=document.getElementById('nfP').value.trim();if(!fp)return toast('Enter a file name','err');try{const r=await api('POST',`/api/apps/${curE}/files`,{filePath:fp,content:''});if(r.error)throw new Error(r.error);toast('File created','ok');document.getElementById('nfP').value='';loadTree();setTimeout(()=>openF(fp),300)}catch(e){toast(e.message,'err')}}
+
+    // --- Helpers ---
+    function closeM(id){if(id==='eMod'&&dirty&&!confirm('Unsaved changes. Close?'))return;document.getElementById(id).classList.remove('on');if(id==='eMod'){destroyCM();curE=null;curF=null;dirty=false}}
+    function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+    function escA(s){return s.replace(/'/g,"\\'").replace(/"/g,'&quot;')}
+    function fmtS(b){if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';return(b/1048576).toFixed(1)+' MB'}
+    function toast(m,t='ok'){const c=document.getElementById('toasts'),e=document.createElement('div');e.className=`toast ${t}`;e.innerHTML=`${t==='ok'?'✅':'❌'} ${esc(m)}`;c.appendChild(e);setTimeout(()=>e.remove(),4000)}
+
+    // UI
+    document.getElementById('dFile').addEventListener('change',function(){document.getElementById('dFn').textContent=this.files[0]?.name||''});
+    document.getElementById('uFile').addEventListener('change',function(){document.getElementById('uFn').textContent=this.files[0]?.name||''});
+    document.querySelectorAll('.ov').forEach(o=>{o.addEventListener('click',e=>{if(e.target===o)closeM(o.id)})});
+    document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();if(curF&&dirty)saveFile()}});
+    document.getElementById('nfP').addEventListener('keydown',e=>{if(e.key==='Enter')newFile()});
+
+    // Auto-fill suggested port on deploy open
+    document.getElementById('dPort').addEventListener('focus',async function(){if(!this.value){try{const ports=await api('GET','/api/ports');const free=ports.find(p=>p.available);if(free){this.value=free.port;document.getElementById('dPortInfo').className='port-info ok';document.getElementById('dPortInfo').textContent=`✓ Port ${free.port} is available (suggested)`}}catch{}}});
+
+    (async()=>{try{const a=await api('GET','/api/apps');document.getElementById('sip').textContent=a.length>0&&a[0].url?new URL(a[0].url).hostname:location.hostname}catch{document.getElementById('sip').textContent=location.hostname}loadApps();setInterval(loadApps,15000)})();
+  </script>
+</body>
+</html>
