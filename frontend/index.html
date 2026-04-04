@@ -119,10 +119,19 @@
     .nf input{flex:1;padding:4px 8px;background:var(--input);border:1px solid var(--border);border-radius:4px;color:var(--text);font:11px 'JetBrains Mono',monospace}
     .nf input:focus{outline:none;border-color:var(--accent)} .ud{width:6px;height:6px;border-radius:50%;background:var(--orange);display:inline-block}
     .lb{font-size:10px;padding:1px 5px;border-radius:3px;background:var(--input);color:var(--muted);border:1px solid var(--border);text-transform:uppercase;letter-spacing:.5px}
+    /* Backup list */
+    .bk-item{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border:1px solid var(--border);border-radius:var(--rs);margin-bottom:6px;background:var(--input)}
+    .bk-info{flex:1;min-width:0}
+    .bk-date{font-size:12px;color:var(--text)} .bk-size{font:11px 'JetBrains Mono',monospace;color:var(--dim)}
+    .bk-acts{display:flex;gap:4px;flex-shrink:0}
+    .sched-row{display:flex;gap:8px;align-items:center;margin-bottom:16px}
+    .sched-row select{flex:1}
+    .db-row{display:flex;gap:8px;align-items:center}
+    .db-row input{flex:1} .db-row .btn-s{flex-shrink:0}
   </style>
 </head>
 <body>
-  <header class="hdr"><div class="hdr-l"><div class="logo">π</div><h1>Pi-<b>PaaS</b></h1></div><span class="ip" id="sip">...</span></header>
+  <header class="hdr"><div class="hdr-l"><div class="logo">π</div><h1>Pi-<b>PaaS</b></h1><span style="font:11px 'JetBrains Mono',monospace;color:var(--muted);margin-left:4px">v1.0.0</span></div><span class="ip" id="sip">...</span></header>
   <main class="main">
     <div class="bar"><h2>Applications <span class="cnt" id="cnt">(0)</span></h2>
       <button class="btn btn-p" onclick="openDeploy()">+ Deploy App</button>
@@ -136,7 +145,8 @@
     <h2>🚀 Deploy New App</h2>
     <div class="fg"><label>App Name</label><input id="dName" placeholder="e.g. my-portfolio" autocomplete="off"></div>
     <div class="fg"><label>App Type</label><select id="dType"><option value="static">HTML/CSS/JS Static</option><option value="node">Node.js</option><option value="python">Python / Flask</option><option value="react">React / Vue (build)</option></select></div>
-    <div class="fg"><label>Database</label><select id="dDb"><option value="none">None</option><option value="sqlite">SQLite</option><option value="postgres">PostgreSQL</option></select></div>
+    <div class="fg"><label>Database</label><select id="dDb" onchange="toggleDbName()"><option value="none">None</option><option value="sqlite">SQLite</option><option value="postgres">PostgreSQL</option></select></div>
+    <div class="fg" id="dDbNameWrap" style="display:none"><label>Database Name (optional)</label><input id="dDbName" placeholder="Auto-generated if empty"></div>
     <div class="fg"><label>Port</label>
       <div class="port-row"><input type="number" id="dPort" min="3001" max="3200" placeholder="Auto-assign"><button class="btn btn-s" onclick="checkPortAvail('dPort','dPortInfo')">Check</button></div>
       <div class="port-info" id="dPortInfo"></div>
@@ -179,6 +189,31 @@
     <div class="nf"><input id="nfP" placeholder="new-file.html (or folder/file.js)"><button class="btn btn-s" onclick="newFile()">+ New File</button></div>
   </div></div>
 
+  <!-- Backup Modal -->
+  <div class="ov" id="bMod"><div class="mod" style="max-width:620px">
+    <button class="mod-x" onclick="closeM('bMod')">×</button>
+    <h2>💾 Backups: <span id="bName"></span></h2>
+    <div class="sched-row">
+      <label style="font-size:12px;color:var(--dim);white-space:nowrap">Schedule:</label>
+      <select id="bSched" style="padding:6px 10px;background:var(--input);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font-size:13px">
+        <option value="off">Off</option><option value="daily">Daily (3am)</option><option value="weekly">Weekly (Sun 3am)</option>
+      </select>
+      <button class="btn btn-s" onclick="setSched()">Set</button>
+    </div>
+    <button class="btn btn-p btn-s" onclick="manualBackup()" id="bkBtn" style="margin-bottom:14px;width:100%;justify-content:center">📦 Create Backup Now</button>
+    <div id="bList" style="max-height:340px;overflow-y:auto"><div style="color:var(--dim);font-size:12px;padding:12px">Loading...</div></div>
+  </div></div>
+
+  <!-- DB Rename Modal -->
+  <div class="ov" id="dbMod"><div class="mod" style="max-width:420px">
+    <button class="mod-x" onclick="closeM('dbMod')">×</button>
+    <h2>🗃️ Database: <span id="dbApp"></span></h2>
+    <p style="font-size:12px;color:var(--dim);margin-bottom:12px">Current: <span id="dbCur" style="color:var(--accent);font-family:'JetBrains Mono',monospace"></span> (<span id="dbType"></span>)</p>
+    <div class="fg"><label>New Database Name</label>
+      <div class="db-row"><input id="dbNew" placeholder="new-name"><button class="btn btn-s btn-p" onclick="renameDb()" id="dbBtn">Rename</button></div>
+    </div>
+  </div></div>
+
   <div class="toasts" id="toasts"></div>
 
   <script>
@@ -212,7 +247,7 @@
           const tl={static:'HTML',node:'Node.js',python:'Python',react:'React'}[a.type]||a.type;
           const dl={none:'',sqlite:'SQLite',postgres:'PostgreSQL'}[a.dbType]||'';
           const on=a.status==='running';
-          return`<div class="card"><div class="card-h"><div><div class="card-name">${esc(a.name)}</div><div class="card-ver">v${a.version||1} · port ${a.port}</div></div><span class="badge ${on?'on':'off'}"><span class="dot"></span>${on?'Online':'Offline'}</span></div><div class="meta"><span class="tag ${a.type}">${tl}</span>${dl?`<span class="tag">${dl}</span>`:''}</div><a class="card-url" href="${a.url}" target="_blank">${a.url}</a><div class="acts">${on?`<button class="btn btn-s" onclick="act('${a.id}','stop')">⏹ Stop</button><button class="btn btn-s" onclick="act('${a.id}','restart')">🔄</button>`:`<button class="btn btn-s" onclick="act('${a.id}','start')">▶ Start</button>`}<button class="btn btn-s" onclick="openUpd('${a.id}','${esc(a.name)}',${a.port})">📦 Update</button><button class="btn btn-s" onclick="openFM('${a.id}','${esc(a.name)}')">📂 Files</button><button class="btn btn-s" onclick="openLog('${a.id}','${esc(a.name)}')">📋</button><button class="btn btn-s btn-d" onclick="openDel('${a.id}','${esc(a.name)}')">🗑</button></div></div>`
+          return`<div class="card"><div class="card-h"><div><div class="card-name">${esc(a.name)}</div><div class="card-ver">v${a.version||1} · port ${a.port}</div></div><span class="badge ${on?'on':'off'}"><span class="dot"></span>${on?'Online':'Offline'}</span></div><div class="meta"><span class="tag ${a.type}">${tl}</span>${dl?`<span class="tag">${dl}${a.dbInfo?' : '+esc(a.dbInfo.name):''}</span>`:''}</div><a class="card-url" href="${a.url}" target="_blank">${a.url}</a><div class="acts">${on?`<button class="btn btn-s" onclick="act('${a.id}','stop')">⏹ Stop</button><button class="btn btn-s" onclick="act('${a.id}','restart')">🔄</button>`:`<button class="btn btn-s" onclick="act('${a.id}','start')">▶ Start</button>`}<button class="btn btn-s" onclick="openUpd('${a.id}','${esc(a.name)}',${a.port})">📦 Update</button><button class="btn btn-s" onclick="openFM('${a.id}','${esc(a.name)}')">📂 Files</button><button class="btn btn-s" onclick="openBk('${a.id}','${esc(a.name)}')">💾 Backups</button>${a.dbInfo?`<button class="btn btn-s" onclick="openDbRename('${a.id}','${esc(a.name)}','${esc(a.dbInfo.name)}','${a.dbInfo.type}')">🗃️ DB</button>`:''}<button class="btn btn-s" onclick="openLog('${a.id}','${esc(a.name)}')">📋</button><button class="btn btn-s btn-d" onclick="openDel('${a.id}','${esc(a.name)}')">🗑</button></div></div>`
         }).join('')}catch(e){console.error(e)}
     }
 
@@ -223,6 +258,7 @@
       if(!n)return toast('Enter a name','err');if(!f)return toast('Select a file','err');
       const btn=document.getElementById('dBtn');btn.innerHTML='<span class="spin"></span> Deploying...';btn.disabled=true;
       const fd=new FormData();fd.append('name',n);fd.append('type',t);fd.append('dbType',d);fd.append('zipfile',f);if(p)fd.append('port',p);
+      const dn=document.getElementById('dDbName').value.trim();if(dn)fd.append('dbName',dn);
       try{const r=await api('POST','/api/apps',fd,true);if(r.error)throw new Error(r.error);toast(n+' deployed on port '+r.port,'ok');closeM('dMod');loadApps()}
       catch(e){toast(e.message,'err')}finally{btn.innerHTML='🚀 Deploy';btn.disabled=false}
     }
@@ -251,6 +287,65 @@
     // --- Logs ---
     function openLog(id,name){curL=id;document.getElementById('lName').textContent=name;document.getElementById('lC').textContent='Loading...';document.getElementById('lMod').classList.add('on');refreshLogs()}
     async function refreshLogs(){try{const r=await api('GET',`/api/apps/${curL}/logs`);const el=document.getElementById('lC');el.textContent=r.logs||'No logs';el.scrollTop=el.scrollHeight}catch{document.getElementById('lC').textContent='Error'}}
+
+    // --- DB Name toggle ---
+    function toggleDbName(){document.getElementById('dDbNameWrap').style.display=document.getElementById('dDb').value==='none'?'none':'block'}
+
+    // --- Backups ---
+    let curB=null;
+    function openBk(id,name){curB=id;document.getElementById('bName').textContent=name;document.getElementById('bMod').classList.add('on');loadBackups()}
+
+    async function loadBackups(){
+      const el=document.getElementById('bList');
+      el.innerHTML='<div style="color:var(--dim);font-size:12px;padding:12px">Loading...</div>';
+      try{
+        const r=await api('GET',`/api/apps/${curB}/backups`);
+        document.getElementById('bSched').value=r.schedule||'off';
+        if(!r.backups||!r.backups.length){el.innerHTML='<div style="color:var(--dim);font-size:12px;padding:12px;text-align:center">No backups yet. Click "Create Backup Now" to make one.</div>';return}
+        el.innerHTML=r.backups.map(b=>`<div class="bk-item">
+          <div class="bk-info"><div class="bk-date">${new Date(b.date).toLocaleString()}</div><div class="bk-size">${fmtS(b.size)}</div></div>
+          <div class="bk-acts">
+            <a class="btn btn-s" href="/api/apps/${curB}/backups/${b.filename}/download" title="Download">⬇</a>
+            <button class="btn btn-s" onclick="restoreBk('${b.filename}')" title="Restore">♻️</button>
+            <button class="btn btn-s btn-d" onclick="delBk('${b.filename}')" title="Delete">🗑</button>
+          </div></div>`).join('')
+      }catch{el.innerHTML='<div style="color:var(--red);font-size:12px;padding:12px">Error loading backups</div>'}
+    }
+
+    async function manualBackup(){
+      const btn=document.getElementById('bkBtn');btn.innerHTML='<span class="spin"></span> Creating...';btn.disabled=true;
+      try{const r=await api('POST',`/api/apps/${curB}/backups`);if(r.error)throw new Error(r.error);toast('Backup created','ok');loadBackups()}
+      catch(e){toast(e.message,'err')}finally{btn.innerHTML='📦 Create Backup Now';btn.disabled=false}
+    }
+
+    async function restoreBk(fn){
+      if(!confirm('Restore this backup? The app will be stopped and all current files replaced.'))return;
+      try{const r=await api('POST',`/api/apps/${curB}/backups/${fn}/restore`);if(r.error)throw new Error(r.error);toast('Backup restored!','ok');loadApps()}
+      catch(e){toast(e.message,'err')}
+    }
+
+    async function delBk(fn){
+      if(!confirm('Delete this backup?'))return;
+      try{const r=await api('DELETE',`/api/apps/${curB}/backups/${fn}`);if(r.error)throw new Error(r.error);toast('Backup deleted','ok');loadBackups()}
+      catch(e){toast(e.message,'err')}
+    }
+
+    async function setSched(){
+      const s=document.getElementById('bSched').value;
+      try{const r=await api('PUT',`/api/apps/${curB}/backups/schedule`,{schedule:s});if(r.error)throw new Error(r.error);toast(`Schedule: ${s}`,'ok')}
+      catch(e){toast(e.message,'err')}
+    }
+
+    // --- DB Rename ---
+    let curDb=null;
+    function openDbRename(id,name,dbName,dbType){curDb=id;document.getElementById('dbApp').textContent=name;document.getElementById('dbCur').textContent=dbName;document.getElementById('dbType').textContent=dbType;document.getElementById('dbNew').value='';document.getElementById('dbMod').classList.add('on')}
+
+    async function renameDb(){
+      const n=document.getElementById('dbNew').value.trim();if(!n)return toast('Enter a new name','err');
+      const btn=document.getElementById('dbBtn');btn.innerHTML='<span class="spin"></span>';btn.disabled=true;
+      try{const r=await api('PUT',`/api/apps/${curDb}/db`,{newName:n});if(r.error)throw new Error(r.error);toast('Database renamed','ok');document.getElementById('dbCur').textContent=r.dbInfo.name;loadApps()}
+      catch(e){toast(e.message,'err')}finally{btn.innerHTML='Rename';btn.disabled=false}
+    }
 
     // --- File Manager ---
     function openFM(id,name){curE=id;curF=null;dirty=false;document.getElementById('eApp').textContent=name;document.getElementById('eTb').style.display='none';document.getElementById('ec').style.display='none';document.getElementById('eE').style.display='flex';document.getElementById('eSt').style.display='none';document.getElementById('nfP').value='';document.getElementById('eMod').classList.add('on');loadTree()}

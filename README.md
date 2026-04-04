@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version"/>
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"/>
   <img src="https://img.shields.io/badge/node-%3E%3D18-green.svg" alt="Node 18+"/>
   <img src="https://img.shields.io/badge/docker-not%20required-lightgrey.svg" alt="No Docker"/>
@@ -11,7 +12,7 @@
 
 <p align="center">
   <strong>The tiniest self-hosted PaaS for your Raspberry Pi (and any Linux box)</strong><br/>
-  Deploy, manage and edit web apps directly from your browser.<br/>
+  Deploy, manage, edit and backup web apps directly from your browser.<br/>
   No Docker. No Git. Just upload a ZIP and go.
 </p>
 
@@ -21,21 +22,15 @@
 
 - 🚀 **One-click deploy** — Upload a `.zip` or single `.html` file and it's live
 - 🔌 **4 app types** — Static HTML, Node.js, Python/Flask, React/Vue
-- 🗃️ **3 database options** — None, SQLite, or PostgreSQL (per-app)
+- 🗃️ **3 database options** — None, SQLite, or PostgreSQL (per-app, custom naming)
 - 🎯 **Port picker** — Choose your port or auto-assign, with live availability check against system processes
-- 📂 **Built-in code editor** — CodeMirror with syntax highlighting, line numbers, bracket matching, code folding, search & replace
+- 📂 **Built-in code editor** — CodeMirror with syntax highlighting for 10+ languages, line numbers, bracket matching, code folding, search & replace, autocomplete
 - 📋 **Live logs** — View each app's stdout/stderr from the panel
+- 💾 **Backup system** — Manual or scheduled (daily/weekly) backups with one-click restore, download, and automatic rotation (keeps last 5)
+- 🗃️ **Database management** — Rename SQLite or PostgreSQL databases from the panel
 - 🔄 **Auto-restart** — Apps survive reboots via systemd/OpenRC
 - 📦 **Safe updates** — App data lives in `~/pi-paas-data/`, never touched by Pi-PaaS code updates
 - 🐧 **Multi-distro** — Debian, Ubuntu, DietPi, Raspberry Pi OS, Fedora, CentOS, Arch, Alpine, openSUSE
-
-## 📸 Screenshots
-
-<p align="center">
-  <img src="assets/logo.svg" alt="Pi-PaaS Logo" width="128"/>
-</p>
-
-> The panel runs on port `9000` and shows all deployed apps as cards with status, port, type, URL, and action buttons (start/stop/restart/update/files/logs/delete).
 
 ## 🚀 Quick Start
 
@@ -69,7 +64,7 @@ cd ~/pi-paas && bash install.sh
 | **Alpine** | Alpine Linux |
 | **SUSE** | openSUSE Leap, openSUSE Tumbleweed, SLES |
 
-The installer auto-detects your distribution via `/etc/os-release` and uses the correct package manager (`apt`, `dnf`, `pacman`, `apk`, or `zypper`).
+The installer auto-detects your distribution via `/etc/os-release` and uses the correct package manager.
 
 ## 📁 Architecture
 
@@ -86,13 +81,17 @@ The installer auto-detects your distribution via `/etc/os-release` and uses the 
 └── README.md
 
 ~/pi-paas-data/             ← Your data (NEVER touched by updates)
-├── apps/
+├── apps/                   ← Deployed app files
 │   ├── my-portfolio/
-│   ├── api-backend/
-│   └── ...
-├── logs/
-├── uploads/
-└── registry.json
+│   └── api-backend/
+├── backups/                ← Per-app backup archives
+│   ├── my-portfolio/
+│   │   ├── 1711900000000.tar.gz
+│   │   └── 1711800000000.tar.gz
+│   └── api-backend/
+├── logs/                   ← Per-app log files
+├── uploads/                ← Temp upload storage
+└── registry.json           ← App registry
 ```
 
 ## 📱 Deploying Apps
@@ -138,23 +137,54 @@ When deploying, you can either:
 - **Leave the port field empty** → Pi-PaaS auto-assigns the next free port (3001–3200)
 - **Enter a specific port** → Click "Check" to verify availability
 
-The port checker scans both:
-- Ports used by other Pi-PaaS apps
-- Ports used by system processes (via `ss`/`netstat`)
+The port checker scans both Pi-PaaS apps and system processes (via `ss`/`netstat`). You can also change an app's port later from the Update modal.
 
-You can also change an app's port later from the Update modal.
+## 🗃️ Database Management
 
-## 🔧 Environment Variables
+When deploying an app, you can:
 
-Each app automatically receives:
+- Choose **SQLite**, **PostgreSQL**, or **None**
+- Optionally set a **custom database name** (auto-generated if left empty)
+
+After deployment, click the **🗃️ DB** button on any app card to **rename** the database:
+- **SQLite** — renames the `.db` file
+- **PostgreSQL** — runs `ALTER DATABASE RENAME`
+
+Environment variables injected into your app:
 
 | Variable | Description |
 |----------|-------------|
 | `PORT` | Assigned port (3001–3200) |
-| `APP_PORT` | Alias of PORT |
-| `DATABASE_URL` | Database connection string (if configured) |
+| `DATABASE_URL` | Database connection string |
 | `SQLITE_PATH` | Path to `.db` file (SQLite only) |
 | `PGDATABASE` | PostgreSQL database name (PG only) |
+
+## 💾 Backup System
+
+Click **💾 Backups** on any app card to access the backup panel:
+
+### Manual Backups
+Click **"Create Backup Now"** to immediately create a `.tar.gz` archive containing:
+- All app files (excluding `node_modules`, `venv`, `__pycache__`)
+- PostgreSQL database dump (`pg_dump`) if applicable
+- SQLite `.db` file (included with app files)
+- Metadata JSON with app info and timestamp
+
+### Scheduled Backups
+Set a schedule per-app:
+- **Off** — no automatic backups
+- **Daily** — runs at 3:00 AM every day
+- **Weekly** — runs at 3:00 AM every Sunday
+
+Schedules persist across Pi-PaaS restarts via `node-cron`.
+
+### Backup Management
+- **Download** — download any backup as a `.tar.gz` file
+- **Restore** — one-click restore: stops the app, replaces all files, restores the database, restarts the app
+- **Delete** — remove individual backups
+- **Auto-rotation** — only the last 5 backups are kept per app (oldest are deleted automatically)
+
+Backups are stored in `~/pi-paas-data/backups/<app-id>/`.
 
 ## ⌨️ Editor Shortcuts
 
@@ -175,13 +205,13 @@ Supported languages: HTML, CSS, JavaScript, JSON, Python, Markdown, SQL, Shell, 
 
 ## 🔄 Updating Pi-PaaS
 
-Your apps are safe — they live in `~/pi-paas-data/`:
+Your apps and backups are safe — they live in `~/pi-paas-data/`:
 
 ```bash
 cd ~
-rm -rf pi-paas/                              # Remove old code
-git clone https://github.com/HexLions/pi-paas.git   # Get new version
-cd pi-paas && bash install.sh                # Reinstall — apps untouched!
+rm -rf pi-paas/
+git clone https://github.com/HexLions/pi-paas.git
+cd pi-paas && bash install.sh   # Apps, DBs, backups all untouched!
 ```
 
 ## 🛠️ Service Management
@@ -204,6 +234,19 @@ systemctl restart pi-paas
 | **Direct** | `http://<IP>:9000` |
 | **Via nginx** | `http://<IP>/pi-paas/` |
 | **Each app** | `http://<IP>:<assigned-port>` |
+
+## 📋 Changelog
+
+### v1.0.0 (Current)
+- 💾 Backup system with manual/scheduled backups, restore, download, auto-rotation
+- 🗃️ Database management — custom DB names, rename SQLite/PostgreSQL
+- 🎯 Port picker with system port scanning
+- 📂 Built-in CodeMirror editor with syntax highlighting
+- 📁 File manager with create/edit/delete
+- 🐧 Multi-distro installer (Debian, Fedora, Arch, Alpine, SUSE)
+- 📦 Safe update architecture (code vs data separation)
+- 🚀 Deploy static HTML, Node.js, Python, React apps
+- 🔄 Auto-restart on reboot via systemd/OpenRC
 
 ## 🤝 Contributing
 
