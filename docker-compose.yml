@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  pi-paas:
+    build: .
+    container_name: pi-paas
+    restart: unless-stopped
+    ports:
+      - "9000:9000"          # Panel
+      - "3001-3200:3001-3200" # App ports
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket
+      - pi-paas-data:/data                          # Persistent app data
+    environment:
+      - DATA_DIR=/data
+      - PANEL_PORT=9000
+      - PORT_RANGE_START=3001
+      - PORT_RANGE_END=3200
+      - DOCKER_NETWORK=pi-paas-net
+    networks:
+      - pi-paas-net
+    labels:
+      - "com.hexlions.app=pi-paas"
+
+  # Optional: Nginx reverse proxy for nicer URLs
+  # Uncomment if you want http://<host>/apps/<appname> routing
+  # nginx-proxy:
+  #   image: nginx:alpine
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - nginx-conf:/etc/nginx/conf.d
+  #   depends_on:
+  #     - pi-paas
+
+networks:
+  pi-paas-net:
+    name: pi-paas-net
+    driver: bridge
+
+volumes:
+  pi-paas-data:
+    name: pi-paas-data

@@ -1,17 +1,21 @@
 {
-  "name": "pi-paas",
-  "version": "1.0.0",
-  "description": "Mini PaaS for Raspberry Pi - Deploy & manage web apps",
+  "name": "pi-paas-docker",
+  "version": "2.0.0",
+  "description": "Pi-PaaS Docker Edition — Self-hosted PaaS panel with Docker backend",
   "main": "backend/server.js",
   "scripts": {
     "start": "node backend/server.js",
-    "dev": "node backend/server.js"
+    "dev": "nodemon backend/server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "fs-extra": "^11.2.0",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
-    "serve": "^14.2.0"
-  }
+    "dockerode": "^4.0.2",
+    "archiver": "^6.0.1",
+    "extract-zip": "^2.0.1"
+  },
+  "keywords": ["paas", "docker", "self-hosted", "raspberry-pi"],
+  "author": "HexLions",
+  "license": "MIT"
 }

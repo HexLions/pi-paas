@@ -1,0 +1,9 @@
+The frontend (index.html) for the Docker edition is identical to the standalone version.
+Copy your existing frontend/index.html here.
+
+The only recommended change is adding a Docker mode badge in the header:
+
+  <span class="badge docker-badge">🐳 Docker Mode</span>
+
+The API is fully compatible — all endpoints are the same.
+One new endpoint is available: GET /api/docker/info
