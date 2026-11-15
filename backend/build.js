@@ -5,8 +5,9 @@ const fs = require('fs-extra');
 const path = require('path');
 const { run } = require('./util');
 const { baseEnv } = require('./processes');
+const runtimes = require('./runtimes');
 
-async function buildApp(cfg, appDir, app, { runAs = null, onOutput } = {}) {
+async function buildApp(cfg, appDir, app, { runAs = null, onOutput, id = null } = {}) {
   const has = (f) => fs.existsSync(path.join(appDir, f));
   const opts = {
     cwd: appDir,
@@ -39,6 +40,16 @@ async function buildApp(cfg, appDir, app, { runAs = null, onOutput } = {}) {
     await run('python3', ['-m', 'venv', venv], opts);
     say('pip install -r requirements.txt');
     await run(path.join(venv, 'bin', 'pip'), ['install', '--disable-pip-version-check', '-r', 'requirements.txt'], opts);
+  } else if (app.type === 'binary' && !app.startCommand) {
+    const bin = runtimes.findBinary(appDir);
+    if (!bin) throw new Error('No program found: name it app, server or main, or set a custom start command');
+    await fs.chmod(path.join(appDir, bin), 0o755);
+    say(`program: ./${bin}`);
+  }
+  for (const [cmd, args, extra = {}] of runtimes.extraBuildSteps(appDir, app, id)) {
+    say(`${cmd} ${args.join(' ')}`);
+    const stepOpts = extra.asPanel ? { ...opts, uid: undefined, gid: undefined, env: { ...opts.env, PATH: process.env.PATH } } : opts;
+    await run(cmd, args, stepOpts);
   }
 }
 

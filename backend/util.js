@@ -3,7 +3,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const { spawn } = require('child_process');
 
-const APP_TYPES = ['static', 'node', 'python', 'react'];
+const APP_TYPES = ['static', 'node', 'python', 'react', 'php', 'deno', 'bun', 'binary', 'docker'];
 const DB_TYPES = ['none', 'sqlite', 'postgres'];
 const SCHEDULES = ['off', 'daily', 'weekly'];
 

@@ -212,12 +212,15 @@ function createHttpApp(ctx) {
 
   app.get('/api/apps/:id/settings', (req, res) => {
     const a = service.mustGet(req.params.id);
-    res.json({ env: service.getEnv(req.params.id), startCommand: a.startCommand || '' });
+    res.json({
+      env: service.getEnv(req.params.id), startCommand: a.startCommand || '', limits: a.limits || {},
+      health: { enabled: true, path: '/', restart: false, ...(a.health || {}) },
+    });
   });
 
   app.put('/api/apps/:id/settings', wrap(async (req, res) => {
-    const { env, startCommand } = req.body || {};
-    await service.setSettings(req.params.id, { env, startCommand });
+    const { env, startCommand, limits, health } = req.body || {};
+    await service.setSettings(req.params.id, { env, startCommand, limits, health });
     res.json(service.view(req.params.id, req.hostname));
   }));
 

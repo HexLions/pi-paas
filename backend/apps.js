@@ -8,6 +8,7 @@ const { extractZip } = require('./archive');
 const { buildApp } = require('./build');
 const { isPortFree } = require('./processes');
 const database = require('./database');
+const runtimes = require('./runtimes');
 const {
   APP_TYPES, DB_TYPES, SCHEDULES, HttpError, slugify, isValidId, isValidPgIdent, isValidEnvKey, run,
 } = require('./util');
@@ -15,13 +16,16 @@ const {
 const RESERVED_ENV = new Set(['PORT', 'APP_PORT', 'PIPAAS_APP_ID', 'DATA_DIR', 'DATABASE_URL', 'SQLITE_PATH', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT']);
 
 class AppService {
-  constructor(cfg, registry, pm, backups, { log = console, runAs = null } = {}) {
+  constructor(cfg, registry, pm, backups, { log = console, runAs = null, notifier = null } = {}) {
     this.cfg = cfg;
     this.registry = registry;
     this.pm = pm;
     this.backups = backups;
     this.log = log;
     this.runAs = runAs;
+    this.notifier = notifier;
+    this.monitor = null; // set by server.js
+    this.jobs = null;
     this.tasks = new Map();
     this.running = new Set();
   }
@@ -59,6 +63,12 @@ class AppService {
       backupSchedule: app.backupSchedule,
       startCommand: app.startCommand || '',
       envKeys: Object.keys(app.env || {}),
+      limits: app.limits || {},
+      health: { enabled: true, path: '/', restart: false, ...(app.health || {}) },
+      source: app.source ? { type: app.source.type, url: app.source.url ? redactUrl(app.source.url) : undefined, branch: app.source.branch, template: app.source.template, commit: app.source.commit } : { type: 'upload' },
+      domains: app.domains || [],
+      jobs: (app.jobs || []).length,
+      ...(this.monitor ? { metrics: this.monitor.current(id) } : {}),
     };
   }
 
@@ -125,7 +135,11 @@ class AppService {
       } catch (err) {
         this.pm.note(id, `${kind} failed: ${err.message}`);
         this.log.error(`[${id}] ${kind} failed: ${err.message}`);
-        if (this.registry.get(id)) this.registry.update(id, { lastError: { task: kind, message: err.message, at: new Date().toISOString() } });
+        const app = this.registry.get(id);
+        if (app) this.registry.update(id, { lastError: { task: kind, message: err.message, at: new Date().toISOString() } });
+        if (this.notifier) {
+          this.notifier.notify('deployFailed', { app: id, level: 'error', title: `${kind.replace(/ing$/, '')} of ${app ? app.name : id} failed`, message: err.message.slice(0, 500) });
+        }
       } finally {
         this.tasks.delete(id);
         this.running.delete(p);
@@ -177,6 +191,7 @@ class AppService {
       if (!APP_TYPES.includes(type)) throw new HttpError(400, `Type must be one of: ${APP_TYPES.join(', ')}`);
       if (!DB_TYPES.includes(dbType)) throw new HttpError(400, `Database must be one of: ${DB_TYPES.join(', ')}`);
       if (!file) throw new HttpError(400, 'A .zip or .html file is required');
+      assertRuntime(type);
       const id = slugify(name);
       if (!isValidId(id)) throw new HttpError(400, 'Name must contain letters or digits');
       if (this.registry.get(id) || this.tasks.has(id)) throw new HttpError(409, 'An app with this name already exists');
@@ -215,7 +230,7 @@ class AppService {
         }
         this.registry.update(id, { dbInfo });
         await this.chownForApp(dir, vol, this.cfg.homeDir);
-        await buildApp(this.cfg, dir, this.registry.get(id), { runAs: this.runAs, onOutput: this.logWriter(id) });
+        await buildApp(this.cfg, dir, this.registry.get(id), { runAs: this.runAs, onOutput: this.logWriter(id), id });
         this.registry.update(id, { desired: 'running' });
         await this.pm.start(id);
       });
@@ -268,7 +283,7 @@ class AppService {
           if (await fs.pathExists(prev)) await fs.copy(prev, db.path);
         }
         await this.chownForApp(dir);
-        await buildApp(this.cfg, dir, this.registry.get(id), { runAs: this.runAs, onOutput: this.logWriter(id) });
+        await buildApp(this.cfg, dir, this.registry.get(id), { runAs: this.runAs, onOutput: this.logWriter(id), id });
       } catch (err) {
         this.pm.note(id, 'Update failed, putting the previous version back');
         await fs.remove(dir);
@@ -311,6 +326,7 @@ class AppService {
     this.assertIdle(id);
     await this.pm.stop(id);
     this.pm.forget(id);
+    if (this.jobs) this.jobs.cancelApp(id);
     if (app.dbInfo && app.dbInfo.type === 'postgres') await database.dropPostgres(app.dbInfo);
     await this.backups.removeAll(id);
     await fs.remove(this.appDir(id));
@@ -335,7 +351,7 @@ class AppService {
 
   // ---------- settings ----------
 
-  async setSettings(id, { env, startCommand }) {
+  async setSettings(id, { env, startCommand, limits, health }) {
     const app = this.mustGet(id);
     this.assertIdle(id);
     const patch = {};
@@ -354,6 +370,13 @@ class AppService {
     if (startCommand !== undefined) {
       if (typeof startCommand !== 'string' || startCommand.length > 1000 || /[\r\n\0]/.test(startCommand)) throw new HttpError(400, 'Invalid start command');
       patch.startCommand = startCommand.trim();
+    }
+    if (limits !== undefined) patch.limits = runtimes.validateLimits(limits);
+    if (health !== undefined) {
+      if (!health || typeof health !== 'object') throw new HttpError(400, 'Invalid health check');
+      const p = health.path === undefined ? '/' : String(health.path);
+      if (!/^\/[\x21-\x7e]{0,200}$/.test(p)) throw new HttpError(400, 'The health check path must start with / and contain no spaces');
+      patch.health = { enabled: health.enabled !== false, path: p, restart: !!health.restart };
     }
     this.registry.update(id, patch);
     if (app.desired === 'running') await this.pm.restart(id);
@@ -434,7 +457,7 @@ class AppService {
           await database.restorePostgres(app.dbInfo, dump);
         }
         await this.chownForApp(dir, this.volumeDir(id));
-        await buildApp(this.cfg, dir, app, { runAs: this.runAs, onOutput: this.logWriter(id) });
+        await buildApp(this.cfg, dir, app, { runAs: this.runAs, onOutput: this.logWriter(id), id });
         await fs.remove(old);
       } catch (err) {
         if (await fs.pathExists(old)) {
@@ -451,4 +474,14 @@ class AppService {
   }
 }
 
-module.exports = { AppService, RESERVED_ENV };
+/** Hide credentials embedded in a git URL (https://user:token@host/...). */
+function redactUrl(url) {
+  return String(url).replace(/^(https?:\/\/)[^/@]+@/, '$1***@');
+}
+
+function assertRuntime(type) {
+  const need = runtimes.RUNTIMES[type] && runtimes.RUNTIMES[type].needs;
+  if (need && !runtimes.availableRuntimes()[type]) throw new HttpError(400, `${need} is not installed on this machine, so ${type} apps cannot run here`);
+}
+
+module.exports = { AppService, RESERVED_ENV, redactUrl, assertRuntime };

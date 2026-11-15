@@ -109,6 +109,7 @@ class Backups {
         this.log.log(`[backup] ${id}: ${b.filename}`);
       } catch (err) {
         this.log.error(`[backup] ${id} failed: ${err.message}`);
+        if (this.notifier) this.notifier.notify('backupFailed', { app: id, level: 'error', title: `Backup of ${id} failed`, message: err.message.slice(0, 500) });
       }
     });
     this.jobs.set(id, task);

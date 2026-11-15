@@ -12,7 +12,10 @@ const CRASH_WINDOW_MS = 10 * 60000;
 const MAX_CRASHES = 5;
 const STOP_GRACE_MS = 8000;
 
-const STATIC_SERVER = path.join(__dirname, 'static-server.js');
+const runtimes = require('./runtimes');
+const { run } = require('./util');
+
+const { STATIC_SERVER } = runtimes;
 
 /**
  * Where the static file server script lives for apps. With a separate app
@@ -76,40 +79,12 @@ function appEnv(cfg, id, app) {
   return env;
 }
 
-/** Work out how to start an app from its type and files. */
-function resolveCommand(appDir, app, staticServer = STATIC_SERVER) {
-  if (app.startCommand) return { cmd: '/bin/sh', args: ['-c', app.startCommand], label: app.startCommand };
-  const has = (f) => fs.existsSync(path.join(appDir, f));
-  if (app.type === 'static' || app.type === 'react') {
-    let dir = appDir;
-    if (app.type === 'react') dir = ['dist', 'build', 'out'].map((d) => path.join(appDir, d)).find((d) => fs.existsSync(d)) || appDir;
-    return { cmd: process.execPath, args: [staticServer, dir, String(app.port), '--spa'], label: `static ${path.relative(appDir, dir) || '.'}` };
-  }
-  if (app.type === 'node') {
-    if (has('package.json')) {
-      const pkg = fs.readJsonSync(path.join(appDir, 'package.json'), { throws: false }) || {};
-      if (pkg.scripts && pkg.scripts.start) return { cmd: 'npm', args: ['start', '--silent'], label: 'npm start' };
-      if (pkg.main && has(pkg.main)) return { cmd: process.execPath, args: [pkg.main], label: `node ${pkg.main}` };
-    }
-    const entry = ['server.js', 'app.js', 'index.js', 'main.js'].find(has);
-    if (!entry) throw new Error('No entry point found: add a "start" script to package.json or a server.js / app.js / index.js');
-    return { cmd: process.execPath, args: [entry], label: `node ${entry}` };
-  }
-  if (app.type === 'python') {
-    const venvPy = path.join(appDir, 'venv', 'bin', 'python');
-    const py = fs.existsSync(venvPy) ? venvPy : 'python3';
-    const entry = ['server.py', 'main.py', 'app.py', 'wsgi.py'].find(has);
-    if (!entry) throw new Error('No entry point found: add app.py, main.py or server.py');
-    return { cmd: py, args: [entry], label: `python ${entry}` };
-  }
-  throw new Error(`Unknown app type "${app.type}"`);
-}
-
 class ProcessManager {
-  constructor(cfg, registry, { log = console, runAs = null } = {}) {
+  constructor(cfg, registry, { log = console, runAs = null, notifier = null } = {}) {
     this.cfg = cfg;
     this.registry = registry;
     this.log = log;
+    this.notifier = notifier;
     this.runAs = runAs; // { uid, gid } or null
     this.procs = new Map();
     this.staticServer = prepareStaticServer(cfg, runAs);
@@ -117,6 +92,10 @@ class ProcessManager {
 
   logFile(id) {
     return path.join(this.cfg.logDir, `${id}.log`);
+  }
+
+  appendLog(id, chunk) {
+    try { fs.appendFileSync(this.logFile(id), chunk); } catch { /* log dir missing is not fatal */ }
   }
 
   /** Append a panel message to the app log. */
@@ -163,19 +142,28 @@ class ProcessManager {
       throw err;
     }
     const appDir = path.join(this.cfg.appsDir, id);
-    const { cmd, args, label } = resolveCommand(appDir, app, this.staticServer);
+    let env = appEnv(this.cfg, id, app);
+    if (app.type === 'docker') {
+      env = runtimes.dockerEnv(env, path.join(this.cfg.volumesDir, id));
+      await run('docker', ['rm', '-f', runtimes.dockerName(id)]).catch(() => {});
+    }
+    const command = runtimes.resolveCommand(appDir, app, { staticServer: this.staticServer, id, cfg: this.cfg, env, runAs: this.runAs });
+    const { cmd, args, env: finalEnv, setsUser } = runtimes.applyLimits(command, app, { runAs: this.runAs, env });
+    if (app.type === 'docker') finalEnv.PATH = process.env.PATH;
     await fs.ensureDir(this.cfg.logDir);
     this.rotateLog(id);
-    this.note(id, `Starting: ${label} on port ${app.port}`);
+    const lim = app.limits || {};
+    const limits = [lim.memoryMb && `${lim.memoryMb} MB`, lim.cpuPercent && `${lim.cpuPercent}% CPU`, lim.nice && `nice ${lim.nice}`].filter(Boolean).join(', ');
+    this.note(id, `Starting: ${command.label} on port ${app.port}${limits ? ` (limits: ${limits})` : ''}`);
     const out = fs.openSync(this.logFile(id), 'a');
     let child;
     try {
       child = spawn(cmd, args, {
         cwd: appDir,
-        env: appEnv(this.cfg, id, app),
+        env: finalEnv,
         stdio: ['ignore', out, out],
         detached: true,
-        ...(this.runAs || {}),
+        ...(setsUser ? {} : this.runAs || {}),
       });
     } finally {
       fs.closeSync(out);
@@ -207,6 +195,12 @@ class ProcessManager {
     if (rec.crashes.length >= MAX_CRASHES) {
       rec.crashed = true;
       this.note(id, `Crashed ${rec.crashes.length} times in 10 minutes; not restarting. Check the log, then start it again.`);
+      if (this.notifier) {
+        this.notifier.notify('crash', {
+          app: id, level: 'error', title: `${app.name} keeps crashing`,
+          message: `It crashed ${rec.crashes.length} times in 10 minutes and was stopped. Last exit: ${signal ? `signal ${signal}` : `code ${code}`}.`,
+        });
+      }
       return;
     }
     const delay = Math.min(60000, 1000 * 2 ** (rec.crashes.length - 1));
@@ -239,6 +233,8 @@ class ProcessManager {
     }
     rec.stopping = false;
     rec.child = null;
+    const app = this.registry.get(id);
+    if (app && app.type === 'docker') await run('docker', ['rm', '-f', runtimes.dockerName(id)]).catch(() => {});
   }
 
   async restart(id) {
@@ -266,5 +262,7 @@ function killGroup(child, sig) {
 function delay(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+const { resolveCommand } = runtimes;
 
 module.exports = { ProcessManager, resolveCommand, appEnv, baseEnv, isPortFree, STATIC_SERVER };

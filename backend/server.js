@@ -11,6 +11,8 @@ const { AppService } = require('./apps');
 const { createHttpApp } = require('./http');
 const { Settings } = require('./settings');
 const { Notifier } = require('./notifier');
+const { Monitor } = require('./monitor');
+const { Jobs } = require('./jobs');
 const { run } = require('./util');
 
 async function resolveRunAs(cfg, log) {
@@ -43,9 +45,14 @@ async function createPanel({ cfg = config.load(), log = console } = {}) {
   const pm = new ProcessManager(cfg, registry, { log, runAs, notifier });
   const backups = new Backups(cfg, registry, log);
   const service = new AppService(cfg, registry, pm, backups, { log, runAs, notifier });
+  const monitor = new Monitor({ cfg, registry, pm, service, settings, notifier, log });
+  const jobs = new Jobs({ cfg, registry, pm, notifier, runAs, log });
+  service.monitor = monitor;
+  backups.notifier = notifier;
+  service.jobs = jobs;
   const ctx = {
-    cfg, registry, auth, pm, backups, service, settings, notifier, runAs, log,
-    modules: [require('./routes/admin')],
+    cfg, registry, auth, pm, backups, service, settings, notifier, monitor, jobs, runAs, log,
+    modules: [require('./routes/admin'), require('./routes/runtime')],
   };
   ctx.app = createHttpApp(ctx);
   return ctx;
@@ -53,13 +60,15 @@ async function createPanel({ cfg = config.load(), log = console } = {}) {
 
 async function main() {
   const panel = await createPanel();
-  const { cfg, service, backups, pm, app } = panel;
+  const { cfg, service, backups, pm, app, monitor, jobs } = panel;
   if (cfg.authDisabled) console.warn('[auth] PIPAAS_AUTH=off: the panel is open to anyone who can reach it');
 
   const server = app.listen(cfg.port, cfg.host, () => {
     console.log(`Pi-PaaS ${cfg.version} listening on http://${cfg.host}:${cfg.port} (data: ${cfg.dataDir})`);
     service.restoreAll();
     backups.restoreSchedules();
+    jobs.restoreAll();
+    monitor.start();
   });
   server.requestTimeout = 0; // large uploads on slow Wi-Fi
 
@@ -70,6 +79,8 @@ async function main() {
     console.log(`[panel] ${sig}: stopping apps`);
     server.close();
     backups.stopAll();
+    jobs.stopAll();
+    monitor.stop();
     await pm.stopAll();
     process.exit(0);
   };
