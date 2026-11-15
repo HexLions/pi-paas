@@ -151,13 +151,13 @@ case "$DISTRO_FAMILY" in
     [ "$WITH_POSTGRES" -eq 1 ] && PKGS_PG="postgresql postgresql-client"
     run_root apt-get update -qq
     # shellcheck disable=SC2086
-    run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl tar python3 python3-venv python3-pip $PKGS_PG
+    run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl tar git python3 python3-venv python3-pip $PKGS_PG
     [ "$WITH_NGINX" -eq 1 ] && run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx
     ;;
   fedora)
     [ "$WITH_POSTGRES" -eq 1 ] && PKGS_PG="postgresql-server postgresql"
     # shellcheck disable=SC2086
-    run_root dnf install -y -q curl tar python3 python3-pip $PKGS_PG
+    run_root dnf install -y -q curl tar git python3 python3-pip $PKGS_PG
     [ "$WITH_NGINX" -eq 1 ] && run_root dnf install -y -q nginx
     if [ "$WITH_POSTGRES" -eq 1 ] && [ -z "$(run_root ls -A /var/lib/pgsql/data 2>/dev/null)" ]; then
       run_root postgresql-setup --initdb >/dev/null 2>&1 || true
@@ -166,7 +166,7 @@ case "$DISTRO_FAMILY" in
   arch)
     [ "$WITH_POSTGRES" -eq 1 ] && PKGS_PG="postgresql"
     # shellcheck disable=SC2086
-    run_root pacman -Sy --noconfirm --needed curl tar python python-pip $PKGS_PG
+    run_root pacman -Sy --noconfirm --needed curl tar git python python-pip $PKGS_PG
     [ "$WITH_NGINX" -eq 1 ] && run_root pacman -S --noconfirm --needed nginx
     if [ "$WITH_POSTGRES" -eq 1 ] && [ -z "$(run_root ls -A /var/lib/postgres/data 2>/dev/null)" ]; then
       run_root su - postgres -c "initdb -D /var/lib/postgres/data" >/dev/null 2>&1 || true
@@ -176,7 +176,7 @@ case "$DISTRO_FAMILY" in
     [ "$WITH_POSTGRES" -eq 1 ] && PKGS_PG="postgresql postgresql-client"
     run_root apk update -q
     # shellcheck disable=SC2086
-    run_root apk add -q bash curl tar python3 py3-pip nodejs npm shadow util-linux $PKGS_PG
+    run_root apk add -q bash curl tar git python3 py3-pip nodejs npm shadow util-linux $PKGS_PG
     [ "$WITH_NGINX" -eq 1 ] && run_root apk add -q nginx
     if [ "$WITH_POSTGRES" -eq 1 ] && [ -z "$(run_root ls -A /var/lib/postgresql/data 2>/dev/null)" ]; then
       run_root /etc/init.d/postgresql setup >/dev/null 2>&1 || true
@@ -185,7 +185,7 @@ case "$DISTRO_FAMILY" in
   suse)
     [ "$WITH_POSTGRES" -eq 1 ] && PKGS_PG="postgresql-server postgresql"
     # shellcheck disable=SC2086
-    run_root zypper -n -q install curl tar python3 python3-pip $PKGS_PG
+    run_root zypper -n -q install curl tar git python3 python3-pip $PKGS_PG
     [ "$WITH_NGINX" -eq 1 ] && run_root zypper -n -q install nginx
     ;;
   *)
@@ -243,8 +243,8 @@ fi
 if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
   [ -f "$SCRIPT_DIR/backend/server.js" ] || die "Run install.sh from the Pi-PaaS folder (backend/server.js not found)."
   mkdir -p "$INSTALL_DIR"
-  rm -rf "$INSTALL_DIR/backend" "$INSTALL_DIR/frontend" "$INSTALL_DIR/assets"
-  (cd "$SCRIPT_DIR" && tar -cf - backend frontend assets package.json package-lock.json LICENSE README.md 2>/dev/null) | (cd "$INSTALL_DIR" && tar -xf -)
+  rm -rf "$INSTALL_DIR/backend" "$INSTALL_DIR/frontend" "$INSTALL_DIR/assets" "$INSTALL_DIR/templates" "$INSTALL_DIR/cli"
+  (cd "$SCRIPT_DIR" && tar -cf - backend frontend assets templates cli package.json package-lock.json LICENSE README.md CHANGELOG.md 2>/dev/null) | (cd "$INSTALL_DIR" && tar -xf -)
   ok "Code copied to ${INSTALL_DIR}"
 else
   ok "Code already in place"
@@ -290,7 +290,8 @@ ENV_LINES=(
   "NODE_ENV=production"
 )
 [ -n "$APP_USER" ] && ENV_LINES+=("PIPAAS_APP_USER=${APP_USER}")
-[ "$WITH_NGINX" -eq 1 ] && ENV_LINES+=("PIPAAS_TRUST_PROXY=1")
+# nginx takes port 80, so the built-in proxy steps aside.
+[ "$WITH_NGINX" -eq 1 ] && ENV_LINES+=("PIPAAS_TRUST_PROXY=1" "PIPAAS_PROXY_PORT=off" "PIPAAS_HTTPS_PORT=off")
 
 if [ "$INIT" = systemd ]; then
   {
@@ -326,12 +327,13 @@ elif [ "$INIT" = openrc ]; then
     echo "command=\"${NODE_BIN}\""
     echo "command_args=\"${INSTALL_DIR}/backend/server.js\""
     echo "command_user=\"${INSTALL_USER}\""
-    echo "command_background=true"
-    echo "pidfile=\"/run/${SERVICE_NAME}.pid\""
+    # supervise-daemon restarts the panel after a crash or a self-update.
+    echo "supervisor=supervise-daemon"
+    echo "respawn_delay=5"
+    echo "respawn_max=0"
     echo "directory=\"${INSTALL_DIR}\""
     echo "output_log=\"/var/log/${SERVICE_NAME}.log\""
     echo "error_log=\"/var/log/${SERVICE_NAME}.log\""
-    echo "retry=\"SIGTERM/30/SIGKILL/5\""
     echo
     echo "depend() {"
     echo "  need net"
@@ -391,7 +393,7 @@ if [ -n "$INITIAL_PW" ]; then
 fi
 echo    "   Code:      ${INSTALL_DIR}"
 echo    "   Data:      ${DATA_DIR}  (apps, volumes, backups, logs - never touched by updates)"
-echo    "   App ports: 3001-3200"
+echo    "   App ports: 3001-3200 (and http://<app>.local through the built-in proxy)"
 if [ "$INIT" = systemd ]; then
   echo  "   Service:   systemctl status ${SERVICE_NAME}   ·   journalctl -u ${SERVICE_NAME} -f"
 elif [ "$INIT" = openrc ]; then
