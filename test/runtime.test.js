@@ -155,3 +155,49 @@ describe('monitoring, notifications and tasks', () => {
     assert.match(r.data.error, /not installed/);
   });
 });
+
+describe('summary for dashboards', () => {
+  it('gives a viewer token one compact answer', async () => {
+    const p = await startPanel({ PIPAAS_PORT_RANGE: '39850-39860' });
+    try {
+      await p.login();
+      const tok = (await p.req('POST', '/api/tokens', { json: { name: 'hexdeck', role: 'viewer' } })).data.token;
+      p.setCookie('');
+      const r = await p.req('GET', '/api/summary', { headers: { Authorization: `Bearer ${tok}` } });
+      assert.equal(r.status, 200);
+      assert.deepEqual(Object.keys(r.data.totals), ['apps', 'running', 'stopped', 'crashed', 'unhealthy']);
+      assert.ok(r.data.system.memory.total > 0);
+    } finally {
+      await p.close();
+    }
+  });
+});
+
+describe('Docker Edition (container mode)', () => {
+  it('runs every app type as a container with a generated Dockerfile', async () => {
+    const d = await tmpDir();
+    await fs.writeFile(path.join(d, 'server.js'), '');
+    const cfg = { containerMode: true, volumesDir: '/srv/data/volumes' };
+    const app = runtimes.containerApp({ type: 'node', port: 3001 }, cfg);
+    assert.equal(app.type, 'docker');
+    assert.equal(app.sourceType, 'node');
+    const steps = runtimes.extraBuildSteps(d, app, 'shop');
+    assert.deepEqual(steps[0][1], ['build', '--pull', '-f', '.pipaas/Dockerfile', '-t', 'pipaas-shop:latest', '.']);
+    const df = await fs.readFile(path.join(d, '.pipaas/Dockerfile'), 'utf8');
+    assert.match(df, /^FROM node:22-alpine/);
+    assert.match(df, /exec npm start/);
+    assert.ok(await fs.pathExists(path.join(d, '.pipaas/static-server.js')));
+    const run = runtimes.resolveCommand(d, app, { id: 'shop', cfg, env: { PORT: '3001' } });
+    assert.equal(run.cmd, 'docker');
+    // A project's own Dockerfile wins.
+    await fs.writeFile(path.join(d, 'Dockerfile'), 'FROM scratch');
+    assert.deepEqual(runtimes.extraBuildSteps(d, app, 'shop')[0][1].slice(2, 4), ['-f', 'Dockerfile']);
+    for (const type of ['static', 'react', 'python', 'php', 'deno', 'bun', 'binary']) {
+      const text = runtimes.generatedDockerfile({ type });
+      assert.match(text, /^FROM [a-z/]+:/, type);
+      assert.doesNotMatch(text, /COPY [^.]*\*/, `${type}: no glob COPY that could match nothing`);
+    }
+    assert.equal(runtimes.containerApp({ type: 'node' }, { containerMode: false }).type, 'node');
+    await fs.remove(d);
+  });
+});

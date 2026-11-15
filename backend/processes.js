@@ -131,7 +131,8 @@ class ProcessManager {
   }
 
   async start(id) {
-    const app = this.registry.get(id);
+    const stored = this.registry.get(id);
+    const app = stored ? runtimes.containerApp(stored, this.cfg) : stored;
     if (!app) throw new Error('App not found');
     const cur = this.procs.get(id);
     if (cur && cur.child) return;
@@ -234,7 +235,7 @@ class ProcessManager {
     rec.stopping = false;
     rec.child = null;
     const app = this.registry.get(id);
-    if (app && app.type === 'docker') await run('docker', ['rm', '-f', runtimes.dockerName(id)]).catch(() => {});
+    if (app && (app.type === 'docker' || this.cfg.containerMode)) await run('docker', ['rm', '-f', runtimes.dockerName(id)]).catch(() => {});
   }
 
   async restart(id) {

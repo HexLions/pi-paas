@@ -68,6 +68,8 @@ function load(env = process.env) {
     authDisabled: env.PIPAAS_AUTH === 'off',
     initialPassword: env.PIPAAS_PASSWORD || '',
     trustProxy: env.PIPAAS_TRUST_PROXY === '1',
+    // Docker Edition: every app in its own container (needs the docker CLI and socket).
+    containerMode: env.PIPAAS_RUNTIME === 'docker',
   };
 }
 

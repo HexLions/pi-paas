@@ -21,7 +21,12 @@ const RUNTIMES = {
   docker: { needs: 'docker' },
 };
 
-function availableRuntimes() {
+function availableRuntimes(cfg = null) {
+  // Docker Edition: every type runs in a container, so only docker matters.
+  if (cfg && cfg.containerMode) {
+    const ok = commandExists('docker');
+    return Object.fromEntries(Object.keys(RUNTIMES).map((type) => [type, ok]));
+  }
   return Object.fromEntries(Object.entries(RUNTIMES).map(([type, r]) => [type, !r.needs || commandExists(r.needs)]));
 }
 
@@ -215,12 +220,79 @@ function extraBuildSteps(appDir, app, id) {
     if (entry) steps.push(['deno', ['cache', entry]]);
   }
   if (app.type === 'docker') {
-    if (!has('Dockerfile')) throw new Error('A Dockerfile is needed at the top of the project');
-    steps.push(['docker', ['build', '--pull', '-t', `${dockerName(id)}:latest`, '.'], { asPanel: true }]);
+    let file = 'Dockerfile';
+    if (app.sourceType) file = prepareContainerBuild(appDir, app);
+    else if (!has('Dockerfile')) throw new Error('A Dockerfile is needed at the top of the project');
+    steps.push(['docker', ['build', '--pull', '-f', file, '-t', `${dockerName(id)}:latest`, '.'], { asPanel: true }]);
   }
   return steps;
 }
 
+// ---------- container mode (PIPAAS_RUNTIME=docker) ----------
+
+/** Shell that starts the first entry point found, shared by the generated images. */
+const FIRST_OF = (cmd, files) => `for f in ${files.join(' ')}; do [ -f "$f" ] && exec ${cmd} "$f"; done; echo "No entry point found (${files.join(', ')})" >&2; exit 1`;
+
+/**
+ * A Dockerfile for an app that brought none, by type. The app listens on
+ * $PORT (the container shares the host network); /data is its volume.
+ * Images are the official multi-arch ones, so they run on a Pi (arm64).
+ */
+function generatedDockerfile(app) {
+  const sh = (script) => `CMD ["sh", "-c", ${JSON.stringify(script)}]`;
+  const staticCmd = (dirs) => sh(`d=.; for x in ${dirs}; do [ -d "$x" ] && d=$x && break; done; exec node .pipaas/static-server.js "$d" "$PORT" --spa`);
+  switch (app.type) {
+    case 'node':
+      // COPY . . first: a glob that matches nothing (no package.json) would fail the build.
+      return ['FROM node:22-alpine', 'WORKDIR /app', 'COPY . .',
+        'RUN if [ -f package-lock.json ]; then npm ci --omit=dev; elif [ -f package.json ]; then npm install --omit=dev; fi',
+        'ENV NODE_ENV=production',
+        sh(`if [ -f package.json ] && grep -q '"start"' package.json; then exec npm start; fi; ${FIRST_OF('node', ['server.js', 'app.js', 'index.js', 'main.js'])}`)].join('\n');
+    case 'react':
+      return ['FROM node:22-alpine', 'WORKDIR /app', 'COPY . .',
+        'RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi',
+        'RUN if grep -q \'"build"\' package.json; then npm run build; fi', staticCmd('dist build out')].join('\n');
+    case 'static':
+      return ['FROM node:22-alpine', 'WORKDIR /app', 'COPY . .', staticCmd('.')].join('\n');
+    case 'python':
+      return ['FROM python:3.12-slim', 'WORKDIR /app', 'ENV PYTHONUNBUFFERED=1', 'COPY . .',
+        'RUN if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi',
+        sh(FIRST_OF('python', ['server.py', 'main.py', 'app.py', 'wsgi.py']))].join('\n');
+    case 'php':
+      return ['FROM php:8.3-cli', 'WORKDIR /app', 'COPY . .',
+        sh('r=.; for x in public web htdocs; do [ -d "$x" ] && r=$x && break; done; exec php -S "0.0.0.0:$PORT" -t "$r"')].join('\n');
+    case 'deno':
+      return ['FROM denoland/deno:alpine', 'WORKDIR /app', 'COPY . .',
+        sh(`if [ -f deno.json ] && grep -q '"start"' deno.json; then exec deno task start; fi; ${FIRST_OF('deno run --allow-net --allow-env --allow-read --allow-write=/data', ['main.ts', 'server.ts', 'main.js', 'server.js', 'mod.ts', 'index.ts'])}`)].join('\n');
+    case 'bun':
+      return ['FROM oven/bun:1-alpine', 'WORKDIR /app', 'COPY . .', 'RUN if [ -f package.json ]; then bun install --production; fi',
+        sh(`if [ -f package.json ] && grep -q '"start"' package.json; then exec bun run start; fi; ${FIRST_OF('bun', ['index.ts', 'server.ts', 'index.js', 'server.js', 'app.ts'])}`)].join('\n');
+    case 'binary':
+      return ['FROM debian:stable-slim', 'WORKDIR /app', 'COPY . .', 'RUN chmod +x app server main start 2>/dev/null || true',
+        sh(FIRST_OF('', ['./app', './server', './main', './start']).replace('exec  ', 'exec '))].join('\n');
+    default:
+      throw new Error(`No container recipe for "${app.type}"`);
+  }
+}
+
+/** In container mode every app runs as a container; its own type picks the image. */
+function containerApp(app, cfg) {
+  if (!cfg || !cfg.containerMode || app.type === 'docker') return app;
+  return { ...app, type: 'docker', sourceType: app.type };
+}
+
+/** Write the generated Dockerfile (and the static server it may need) into the build folder. */
+function prepareContainerBuild(appDir, app) {
+  const own = path.join(appDir, 'Dockerfile');
+  if (fs.existsSync(own)) return 'Dockerfile';
+  const dir = path.join(appDir, '.pipaas');
+  fs.ensureDirSync(dir);
+  fs.copyFileSync(STATIC_SERVER, path.join(dir, 'static-server.js'));
+  fs.writeFileSync(path.join(dir, 'Dockerfile'), `${generatedDockerfile({ type: app.sourceType || app.type })}\n`);
+  return '.pipaas/Dockerfile';
+}
+
 module.exports = {
+  generatedDockerfile, containerApp, prepareContainerBuild,
   RUNTIMES, STATIC_SERVER, availableRuntimes, resolveCommand, applyLimits, validateLimits, extraBuildSteps, dockerName, dockerEnv, findBinary,
 };

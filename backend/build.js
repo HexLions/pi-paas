@@ -7,7 +7,8 @@ const { run } = require('./util');
 const { baseEnv } = require('./processes');
 const runtimes = require('./runtimes');
 
-async function buildApp(cfg, appDir, app, { runAs = null, onOutput, id = null } = {}) {
+async function buildApp(cfg, appDir, original, { runAs = null, onOutput, id = null } = {}) {
+  const app = runtimes.containerApp(original, cfg);
   const has = (f) => fs.existsSync(path.join(appDir, f));
   const opts = {
     cwd: appDir,

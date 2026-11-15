@@ -204,7 +204,7 @@ class AppService {
       if (name.length > 60) throw new HttpError(400, 'Name is too long (max 60 characters)');
       if (!APP_TYPES.includes(type)) throw new HttpError(400, `Type must be one of: ${APP_TYPES.join(', ')}`);
       if (!DB_TYPES.includes(dbType)) throw new HttpError(400, `Database must be one of: ${DB_TYPES.join(', ')}`);
-      assertRuntime(type);
+      assertRuntime(this.cfg.containerMode ? 'docker' : type);
       const id = slugify(name);
       if (!isValidId(id)) throw new HttpError(400, 'Name must contain letters or digits');
       if (this.registry.get(id) || this.tasks.has(id)) throw new HttpError(409, 'An app with this name already exists');
