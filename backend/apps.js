@@ -4,7 +4,7 @@
 // "task" while it runs and the build output lands in the app log.
 const fs = require('fs-extra');
 const path = require('path');
-const { extractZip } = require('./archive');
+const sources = require('./sources');
 const { buildApp } = require('./build');
 const { isPortFree } = require('./processes');
 const database = require('./database');
@@ -143,6 +143,10 @@ class AppService {
       } finally {
         this.tasks.delete(id);
         this.running.delete(p);
+        // A push arrived while this job ran: deploy the newest code now.
+        if (this.pendingPull && this.pendingPull.delete(id) && this.registry.get(id)) {
+          try { this.pull(id, null, 'webhook (queued)'); } catch (err) { this.log.error(`[${id}] queued pull failed: ${err.message}`); }
+        }
       }
     })();
     this.running.add(p);
@@ -167,30 +171,25 @@ class AppService {
     }
   }
 
-  async unpackUpload(file, dest) {
-    await fs.ensureDir(dest);
-    if (/\.html?$/i.test(file.originalname)) {
-      await fs.move(file.path, path.join(dest, 'index.html'), { overwrite: true });
-    } else {
-      try {
-        await extractZip(file.path, dest);
-      } finally {
-        await fs.remove(file.path);
-      }
-    }
-  }
-
   // ---------- deploy ----------
 
-  async deploy({ name, type, dbType = 'none', dbName, port, file }, host) {
+  async deploy(input, host) {
+    let { name, type, dbType = 'none', dbName, port } = input;
+    const { file } = input;
     let handedOff = false;
     try {
+      const source = sources.parseSource(input);
+      if (source.type === 'template') {
+        const tpl = sources.listTemplates().find((t) => t.id === source.template);
+        type = type || tpl.type;
+        if (!input.dbType && tpl.db) dbType = tpl.db;
+        name = name || tpl.name;
+      }
       name = String(name || '').trim();
       if (!name) throw new HttpError(400, 'Name is required');
       if (name.length > 60) throw new HttpError(400, 'Name is too long (max 60 characters)');
       if (!APP_TYPES.includes(type)) throw new HttpError(400, `Type must be one of: ${APP_TYPES.join(', ')}`);
       if (!DB_TYPES.includes(dbType)) throw new HttpError(400, `Database must be one of: ${DB_TYPES.join(', ')}`);
-      if (!file) throw new HttpError(400, 'A .zip or .html file is required');
       assertRuntime(type);
       const id = slugify(name);
       if (!isValidId(id)) throw new HttpError(400, 'Name must contain letters or digits');
@@ -207,7 +206,7 @@ class AppService {
       const now = new Date().toISOString();
       this.registry.set(id, {
         name, type, port: appPort, dbType, dbInfo: null, env: {}, startCommand: '', backupSchedule: 'off',
-        desired: 'stopped', version: 1, createdAt: now, updatedAt: now, lastError: null,
+        desired: 'stopped', version: 1, createdAt: now, updatedAt: now, lastError: null, source,
       });
       await fs.remove(this.pm.logFile(id));
       this.pm.note(id, `Deploying ${name} (${type})`);
@@ -216,8 +215,11 @@ class AppService {
       this.runTask(id, 'deploying', async () => {
         const dir = this.appDir(id);
         const vol = this.volumeDir(id);
-        await fs.remove(dir);
-        await this.unpackUpload(file, dir);
+        const got = await sources.materialize(source, dir, { file, onOutput: this.logWriter(id) });
+        if (got.commit) {
+          this.pm.note(id, `Checked out ${got.commit.slice(0, 10)}${got.message ? `: ${got.message}` : ''}`);
+          this.registry.update(id, { source: { ...source, commit: got.commit } });
+        }
         await fs.ensureDir(vol);
         await fs.ensureDir(this.cfg.homeDir);
         let dbInfo = null;
@@ -267,15 +269,42 @@ class AppService {
       return this.view(id, host);
     }
 
-    this.runTask(id, 'updating', async () => {
+    this.replaceCode(id, 'updating', { port: newPort, source: { type: 'upload' }, file });
+    return this.view(id, host);
+  }
+
+  /** Fetch the git source again and redeploy (button, CLI or webhook). */
+  pull(id, host, reason = 'manual') {
+    const app = this.mustGet(id);
+    if (!app.source || app.source.type !== 'git') throw new HttpError(400, 'This app was not deployed from git');
+    this.assertIdle(id);
+    this.pm.note(id, `Pulling ${app.source.branch} from ${redactUrl(app.source.url)} (${reason})`);
+    this.replaceCode(id, 'updating', { source: app.source });
+    return this.view(id, host);
+  }
+
+  /**
+   * Swap the app's code for a new version as a background job: stop, move
+   * the current code aside, get the new code, build, start. If anything fails
+   * the previous code is put back. The previous code is kept as a release.
+   */
+  replaceCode(id, kind, { port = null, source, file = null, release = null }) {
+    const app = this.registry.get(id);
+    return this.runTask(id, kind, async () => {
       const dir = this.appDir(id);
       const old = path.join(this.cfg.appsDir, `.old-${id}`);
       await this.pm.stop(id);
-      if (newPort) this.registry.update(id, { port: newPort });
+      if (port) this.registry.update(id, { port });
       await fs.remove(old);
       if (await fs.pathExists(dir)) await fs.move(dir, old);
+      let got = {};
       try {
-        await this.unpackUpload(file, dir);
+        if (release) {
+          await fs.move(release.dir, dir);
+        } else {
+          got = await sources.materialize(source, dir, { file, onOutput: this.logWriter(id) });
+          if (got.commit) this.pm.note(id, `Checked out ${got.commit.slice(0, 10)}${got.message ? `: ${got.message}` : ''}`);
+        }
         // v1.0 kept SQLite inside the app folder: carry it over.
         const db = app.dbInfo;
         if (db && db.type === 'sqlite' && db.path && db.path.startsWith(dir + path.sep)) {
@@ -283,18 +312,83 @@ class AppService {
           if (await fs.pathExists(prev)) await fs.copy(prev, db.path);
         }
         await this.chownForApp(dir);
-        await buildApp(this.cfg, dir, this.registry.get(id), { runAs: this.runAs, onOutput: this.logWriter(id), id });
+        // A release keeps its dependencies; only a Python venv must be rebuilt (it records absolute paths).
+        if (!release || (app.type === 'python' && (await fs.pathExists(path.join(dir, 'requirements.txt'))))) {
+          if (release) await fs.remove(path.join(dir, 'venv'));
+          await buildApp(this.cfg, dir, this.registry.get(id), { runAs: this.runAs, onOutput: this.logWriter(id), id });
+        }
       } catch (err) {
-        this.pm.note(id, 'Update failed, putting the previous version back');
+        this.pm.note(id, `${kind === 'rollingBack' ? 'Rollback' : 'Update'} failed, putting the previous version back`);
+        if (release && (await fs.pathExists(dir))) await fs.move(dir, release.dir).catch(() => {});
         await fs.remove(dir);
         if (await fs.pathExists(old)) await fs.move(old, dir);
         if (app.desired === 'running') await this.pm.start(id).catch(() => {});
         throw err;
       }
-      await fs.remove(old);
-      this.registry.update(id, { version: (app.version || 1) + 1, desired: 'running' });
+      const current = this.registry.get(id);
+      if (release) await fs.remove(path.join(this.releasesDir(id), `${release.version}.json`));
+      if (await fs.pathExists(old)) await this.keepRelease(id, old, current);
+      const patch = { desired: 'running' };
+      if (release) {
+        patch.version = release.version;
+        patch.source = release.source || current.source;
+      } else {
+        patch.version = this.nextVersion(id, current);
+        patch.source = { ...source, ...(got.commit ? { commit: got.commit } : {}) };
+      }
+      this.registry.update(id, patch);
       await this.pm.start(id);
     });
+  }
+
+  nextVersion(id, app) {
+    const kept = this.releaseList(id).map((r) => r.version);
+    return Math.max(app.version || 1, ...kept) + 1;
+  }
+
+  // ---------- releases (previous versions) ----------
+
+  releasesDir(id) { return path.join(this.cfg.releasesDir, id); }
+
+  async keepRelease(id, dir, app) {
+    const dest = path.join(this.releasesDir(id), String(app.version || 1));
+    await fs.remove(dest);
+    await fs.ensureDir(path.dirname(dest));
+    await fs.move(dir, dest);
+    const { token, hookSecret, ...src } = app.source || { type: 'upload' };
+    await fs.writeJson(path.join(this.releasesDir(id), `${app.version || 1}.json`), {
+      version: app.version || 1, replacedAt: new Date().toISOString(), deployedAt: app.updatedAt, source: src,
+    });
+    const all = this.releaseList(id);
+    for (const r of all.slice(this.cfg.keepReleases)) {
+      await fs.remove(path.join(this.releasesDir(id), String(r.version)));
+      await fs.remove(path.join(this.releasesDir(id), `${r.version}.json`));
+    }
+  }
+
+  releaseList(id) {
+    const dir = this.releasesDir(id);
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((f) => /^\d+\.json$/.test(f)).map((f) => {
+      try { return fs.readJsonSync(path.join(dir, f)); } catch { return null; }
+    }).filter((r) => r && fs.existsSync(path.join(dir, String(r.version)))).sort((a, b) => b.version - a.version);
+  }
+
+  listReleases(id) {
+    this.mustGet(id);
+    return this.releaseList(id);
+  }
+
+  async rollback(id, version, host) {
+    const app = this.mustGet(id);
+    this.assertIdle(id);
+    const v = Number(version);
+    const meta = this.releaseList(id).find((r) => r.version === v);
+    if (!meta) throw new HttpError(404, 'That version is no longer kept');
+    const dir = path.join(this.releasesDir(id), String(v));
+    this.pm.note(id, `Rolling back from version ${app.version} to ${v}`);
+    const source = meta.source && meta.source.type === 'git' ? { ...app.source, commit: meta.source.commit } : meta.source;
+    this.replaceCode(id, 'rollingBack', { release: { dir, version: v, source } });
     return this.view(id, host);
   }
 
@@ -331,6 +425,7 @@ class AppService {
     await this.backups.removeAll(id);
     await fs.remove(this.appDir(id));
     await fs.remove(this.volumeDir(id));
+    await fs.remove(this.releasesDir(id));
     await fs.remove(this.pm.logFile(id));
     await fs.remove(`${this.pm.logFile(id)}.1`);
     this.registry.remove(id);

@@ -1,0 +1,1 @@
+{ "name": "Notes API", "type": "node", "order": 3, "description": "A small JSON API with a page to add and delete notes. No dependencies; notes are saved in the app's data folder." }

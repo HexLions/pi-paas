@@ -63,7 +63,8 @@ function createHttpApp(ctx) {
   app.use(express.static(frontend, { index: 'index.html' }));
   app.use('/vendor/codemirror', express.static(path.dirname(require.resolve('codemirror/package.json')), { maxAge: '1d' }));
   app.use('/assets', express.static(path.join(__dirname, '..', 'assets'), { maxAge: '7d' }));
-  app.use('/api', express.json({ limit: `${MAX_EDIT_BYTES * 2}b` }));
+  // rawBody is kept for webhook signature checks.
+  app.use('/api', express.json({ limit: `${MAX_EDIT_BYTES * 2}b`, verify: (req, res, buf) => { req.rawBody = buf; } }));
 
   const upload = multer({
     dest: cfg.uploadDir,
@@ -174,7 +175,10 @@ function createHttpApp(ctx) {
 
   app.post('/api/apps', upload.single('zipfile'), wrap(async (req, res) => {
     const b = req.body || {};
-    const view = await service.deploy({ name: b.name, type: b.type, dbType: b.dbType || 'none', dbName: b.dbName, port: b.port, file: req.file }, req.hostname);
+    const view = await service.deploy({
+      name: b.name, type: b.type, dbType: b.dbType, dbName: b.dbName, port: b.port, file: req.file,
+      gitUrl: b.gitUrl, gitBranch: b.gitBranch, gitToken: b.gitToken, gitSubdir: b.gitSubdir, template: b.template,
+    }, req.hostname);
     res.status(202).json(view);
   }));
 

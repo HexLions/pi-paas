@@ -1,0 +1,1 @@
+{ "name": "PHP guestbook", "type": "php", "order": 5, "description": "A guestbook in plain PHP. Messages are saved in the app's data folder." }

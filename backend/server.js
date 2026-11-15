@@ -27,13 +27,13 @@ async function resolveRunAs(cfg, log) {
 }
 
 async function createPanel({ cfg = config.load(), log = console } = {}) {
-  for (const d of [cfg.dataDir, cfg.appsDir, cfg.volumesDir, cfg.uploadDir, cfg.logDir, cfg.backupDir, cfg.homeDir]) {
+  for (const d of [cfg.dataDir, cfg.appsDir, cfg.volumesDir, cfg.uploadDir, cfg.logDir, cfg.backupDir, cfg.releasesDir, cfg.homeDir]) {
     await fs.ensureDir(d);
   }
   const runAs = await resolveRunAs(cfg, log);
   // With a separate app user it must be able to walk into apps/, volumes/ and home/.
   await fs.chmod(cfg.dataDir, runAs ? 0o711 : 0o700).catch(() => {});
-  for (const d of [cfg.uploadDir, cfg.logDir, cfg.backupDir]) await fs.chmod(d, 0o700).catch(() => {});
+  for (const d of [cfg.uploadDir, cfg.logDir, cfg.backupDir, cfg.releasesDir]) await fs.chmod(d, 0o700).catch(() => {});
   // Leftovers from uploads or restores interrupted by a crash.
   await fs.emptyDir(cfg.uploadDir);
 
@@ -52,7 +52,7 @@ async function createPanel({ cfg = config.load(), log = console } = {}) {
   service.jobs = jobs;
   const ctx = {
     cfg, registry, auth, pm, backups, service, settings, notifier, monitor, jobs, runAs, log,
-    modules: [require('./routes/admin'), require('./routes/runtime')],
+    modules: [require('./routes/admin'), require('./routes/runtime'), require('./routes/deploy')],
   };
   ctx.app = createHttpApp(ctx);
   return ctx;

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Links</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #f3f5f2; --card: #fff; --ink: #1d241f; --dim: #5d6a62; --line: #d6ddd7; --accent: #2f6f4f; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #121714; --card: #1a211d; --ink: #e5ece7; --dim: #93a39a; --line: #2b3630; --accent: #6cc59a; } }
+    body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+    main { max-width: 860px; margin: 0 auto; padding: 48px 20px; }
+    h1 { font-size: 28px; margin: 0 0 32px; }
+    h2 { font-size: 14px; color: var(--dim); font-weight: 600; margin: 28px 0 10px; }
+    ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+    a { display: block; padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); text-decoration: none; font-weight: 600; }
+    a:hover, a:focus-visible { border-color: var(--accent); outline: none; }
+    a small { display: block; font-weight: 400; color: var(--dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 id="title">Links</h1>
+    <div id="groups"></div>
+  </main>
+  <script>
+    fetch('links.json').then((r) => r.json()).then((data) => {
+      document.title = data.title || 'Links';
+      document.getElementById('title').textContent = data.title || 'Links';
+      const root = document.getElementById('groups');
+      for (const g of data.groups || []) {
+        const h = document.createElement('h2');
+        h.textContent = g.name;
+        const ul = document.createElement('ul');
+        for (const l of g.links || []) {
+          const li = document.createElement('li');
+          const a = document.createElement('a');
+          a.href = l.url;
+          a.textContent = l.label;
+          const s = document.createElement('small');
+          s.textContent = l.url.replace(/^https?:\/\//, '');
+          a.appendChild(s);
+          li.appendChild(a);
+          ul.appendChild(li);
+        }
+        root.append(h, ul);
+      }
+    });
+  </script>
+</body>
+</html>

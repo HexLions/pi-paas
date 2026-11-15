@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Notes</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: Canvas; color: CanvasText; }
+    main { max-width: 640px; margin: 0 auto; padding: 40px 20px; }
+    form { display: flex; gap: 8px; margin-bottom: 24px; }
+    input { flex: 1; padding: 10px 12px; font: inherit; border: 1px solid GrayText; border-radius: 6px; background: Field; color: FieldText; }
+    button { padding: 10px 14px; font: inherit; border-radius: 6px; border: 1px solid GrayText; background: ButtonFace; color: ButtonText; cursor: pointer; }
+    li { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid color-mix(in srgb, GrayText 40%, transparent); }
+    ul { list-style: none; padding: 0; }
+    time { color: GrayText; font-size: 13px; display: block; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Notes</h1>
+    <form id="f"><input id="t" placeholder="Write a note" autocomplete="off" required><button>Add note</button></form>
+    <ul id="list"></ul>
+  </main>
+  <script>
+    const list = document.getElementById('list');
+    async function load() {
+      const notes = await (await fetch('api/notes')).json();
+      list.replaceChildren(...notes.map((n) => {
+        const li = document.createElement('li');
+        const p = document.createElement('div');
+        p.textContent = n.text;
+        const time = document.createElement('time');
+        time.textContent = new Date(n.at).toLocaleString();
+        p.appendChild(time);
+        const b = document.createElement('button');
+        b.textContent = 'Delete';
+        b.onclick = async () => { await fetch(`api/notes/${n.id}`, { method: 'DELETE' }); load(); };
+        li.append(p, b);
+        return li;
+      }));
+    }
+    document.getElementById('f').onsubmit = async (e) => {
+      e.preventDefault();
+      const t = document.getElementById('t');
+      await fetch('api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: t.value }) });
+      t.value = '';
+      load();
+    };
+    load();
+  </script>
+</body>
+</html>
