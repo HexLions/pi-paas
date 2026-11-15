@@ -7,11 +7,14 @@
 const fs = require('fs-extra');
 const path = require('path');
 const cron = require('node-cron');
-const { run, HttpError } = require('./util');
+const os = require('os');
+const { run, HttpError, commandExists } = require('./util');
 const database = require('./database');
+const crypt = require('./crypt');
 
 const SKIP = new Set(['node_modules', 'venv', '.venv', '__pycache__', '.git', '.cache', '.npm']);
 const NAME_RE = /^\d{10,16}\.tar\.gz$/;
+const REMOTE_RE = /^\d{10,16}\.tar\.gz(\.enc)?$/;
 const CRON = { daily: '0 3 * * *', weekly: '0 3 * * 0' };
 
 class Backups {
@@ -20,6 +23,27 @@ class Backups {
     this.registry = registry;
     this.log = log;
     this.jobs = new Map();
+    this.settings = null; // set by server.js
+    this.notifier = null;
+    this.background = new Set();
+  }
+
+  statusFile(id, name) {
+    return path.join(this.dir(id), `${name.replace(/\.tar\.gz$/, '')}.json`);
+  }
+
+  async readStatus(id, name) {
+    try { return await fs.readJson(this.statusFile(id, name)); } catch { return {}; }
+  }
+
+  async writeStatus(id, name, patch) {
+    const cur = await this.readStatus(id, name);
+    await fs.writeJson(this.statusFile(id, name), { ...cur, ...patch });
+  }
+
+  /** Wait for verification and offsite copies (tests, shutdown). */
+  async settle() {
+    while (this.background.size) await Promise.all([...this.background]);
   }
 
   dir(id) {
@@ -38,7 +62,8 @@ class Backups {
     const out = await Promise.all(names.map(async (f) => {
       const st = await fs.stat(path.join(dir, f));
       const ts = Number.parseInt(f, 10);
-      return { filename: f, timestamp: String(ts), date: new Date(ts).toISOString(), size: st.size };
+      const status = await this.readStatus(id, f);
+      return { filename: f, timestamp: String(ts), date: new Date(ts).toISOString(), size: st.size, verified: status.verified || null, offsite: status.offsite || null };
     }));
     return out.sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
   }
@@ -67,7 +92,11 @@ class Backups {
       await run('tar', ['-czf', out, '-C', tmp, '.'], { timeout: 30 * 60000 });
       await this.rotate(id);
       const st = await fs.stat(out);
-      return { filename: `${ts}.tar.gz`, timestamp: String(ts), date: new Date(ts).toISOString(), size: st.size };
+      const name = `${ts}.tar.gz`;
+      // Checking and copying off the Pi can take a while: do it after answering.
+      const p = this.afterCreate(id, name).catch((err) => this.log.error(`[backup] ${id}: ${err.message}`)).finally(() => this.background.delete(p));
+      this.background.add(p);
+      return { filename: name, timestamp: String(ts), date: new Date(ts).toISOString(), size: st.size };
     } finally {
       await fs.remove(tmp);
     }
@@ -75,7 +104,143 @@ class Backups {
 
   async rotate(id) {
     const all = await this.list(id);
-    for (const b of all.slice(this.cfg.maxBackups)) await fs.remove(path.join(this.dir(id), b.filename));
+    for (const b of all.slice(this.cfg.maxBackups)) {
+      await fs.remove(path.join(this.dir(id), b.filename));
+      await fs.remove(this.statusFile(id, b.filename));
+    }
+  }
+
+  async afterCreate(id, name) {
+    const conf = this.settings ? this.settings.get().backups : { verify: true, target: 'none' };
+    if (conf.verify) {
+      const v = await this.verify(id, name);
+      if (!v.ok) throw new Error(`backup ${name} failed verification: ${v.error}`);
+    }
+    if (conf.target !== 'none') {
+      try {
+        await this.offsite(id, name);
+      } catch (err) {
+        if (this.notifier) this.notifier.notify('backupFailed', { app: id, level: 'error', title: `Offsite copy of ${id} failed`, message: err.message.slice(0, 500) });
+        throw err;
+      }
+    }
+  }
+
+  /** Read the whole archive and check it is a Pi-PaaS backup that can be restored. */
+  async verify(id, name) {
+    const file = this.file(id, name);
+    let result;
+    try {
+      const { stdout } = await run('tar', ['-tzf', file], { timeout: 30 * 60000 });
+      const entries = stdout.split('\n').map((l) => l.replace(/^\.\//, ''));
+      if (!entries.includes('meta.json')) throw new Error('meta.json is missing');
+      if (!entries.some((e) => e.startsWith('files/'))) throw new Error('the app files are missing');
+      const app = this.registry.get(id);
+      if (app && app.dbInfo && app.dbInfo.type === 'postgres' && !entries.includes('db.sql')) throw new Error('the database dump is missing');
+      result = { ok: true, at: new Date().toISOString(), entries: entries.filter(Boolean).length };
+    } catch (err) {
+      result = { ok: false, at: new Date().toISOString(), error: err.message.slice(0, 300) };
+    }
+    await this.writeStatus(id, name, { verified: result });
+    return result;
+  }
+
+  // ---------- offsite copies ----------
+
+  remoteBase(id) {
+    const conf = this.settings.get().backups;
+    const host = os.hostname();
+    if (conf.target === 'folder') return path.join(conf.folder, host, id);
+    if (conf.target === 'rclone') return `${conf.rclone.replace(/\/+$/, '')}/${host}/${id}`;
+    throw new HttpError(400, 'No offsite backup target is set');
+  }
+
+  async offsite(id, name) {
+    const conf = this.settings.get().backups;
+    const src = this.file(id, name);
+    let upload = src;
+    let remoteName = name;
+    const tmp = path.join(this.cfg.uploadDir, `offsite-${id}-${Date.now()}`);
+    try {
+      if (conf.passphrase) {
+        upload = `${tmp}.enc`;
+        remoteName = `${name}.enc`;
+        await crypt.encryptFile(src, upload, conf.passphrase);
+      }
+      const st = await fs.stat(upload);
+      const base = this.remoteBase(id);
+      if (conf.target === 'folder') {
+        if (!(await fs.pathExists(conf.folder))) throw new Error(`${conf.folder} does not exist (is the NAS mounted?)`);
+        await fs.ensureDir(base);
+        await fs.copy(upload, path.join(base, remoteName));
+        const copied = await fs.stat(path.join(base, remoteName));
+        if (copied.size !== st.size) throw new Error('the copy has a different size');
+      } else {
+        if (!commandExists('rclone')) throw new Error('rclone is not installed');
+        await run('rclone', ['copyto', '--retries', '3', upload, `${base}/${remoteName}`], { timeout: 60 * 60000 });
+        const list = JSON.parse((await run('rclone', ['lsjson', '--files-only', `${base}/${remoteName}`], { timeout: 120000 })).stdout || '[]');
+        if (!list[0] || list[0].Size !== st.size) throw new Error('the remote copy has a different size');
+      }
+      await this.writeStatus(id, name, { offsite: { ok: true, at: new Date().toISOString(), target: conf.target, name: remoteName, encrypted: !!conf.passphrase } });
+      await this.rotateRemote(id);
+    } catch (err) {
+      await this.writeStatus(id, name, { offsite: { ok: false, at: new Date().toISOString(), target: conf.target, error: err.message.slice(0, 300) } });
+      throw err;
+    } finally {
+      await fs.remove(`${tmp}.enc`);
+    }
+  }
+
+  async remoteList(id) {
+    const conf = this.settings.get().backups;
+    if (conf.target === 'none') return [];
+    const base = this.remoteBase(id);
+    let items = [];
+    if (conf.target === 'folder') {
+      if (!(await fs.pathExists(base))) return [];
+      items = await Promise.all((await fs.readdir(base)).filter((f) => REMOTE_RE.test(f)).map(async (f) => ({ name: f, size: (await fs.stat(path.join(base, f))).size })));
+    } else {
+      const out = (await run('rclone', ['lsjson', '--files-only', base], { timeout: 120000 }).catch(() => ({ stdout: '[]' }))).stdout;
+      items = JSON.parse(out || '[]').filter((x) => REMOTE_RE.test(x.Name)).map((x) => ({ name: x.Name, size: x.Size }));
+    }
+    return items.map((x) => ({ ...x, date: new Date(Number.parseInt(x.name, 10)).toISOString(), encrypted: x.name.endsWith('.enc') }))
+      .sort((a, b) => b.name.localeCompare(a.name));
+  }
+
+  async rotateRemote(id) {
+    const conf = this.settings.get().backups;
+    const extra = (await this.remoteList(id)).slice(this.cfg.maxBackups);
+    const base = this.remoteBase(id);
+    for (const r of extra) {
+      if (conf.target === 'folder') await fs.remove(path.join(base, r.name));
+      else await run('rclone', ['deletefile', `${base}/${r.name}`], { timeout: 120000 }).catch(() => {});
+    }
+  }
+
+  /** Bring a remote backup back into the local list (decrypted), ready to restore. */
+  async fetchRemote(id, remoteName) {
+    if (!REMOTE_RE.test(remoteName || '')) throw new HttpError(400, 'Invalid backup name');
+    const conf = this.settings.get().backups;
+    const base = this.remoteBase(id);
+    const localName = remoteName.replace(/\.enc$/, '');
+    const dest = this.file(id, localName);
+    await fs.ensureDir(this.dir(id));
+    const tmp = path.join(this.cfg.uploadDir, `fetch-${id}-${Date.now()}`);
+    try {
+      if (conf.target === 'folder') await fs.copy(path.join(base, remoteName), tmp);
+      else await run('rclone', ['copyto', `${base}/${remoteName}`, tmp], { timeout: 60 * 60000 });
+      if (remoteName.endsWith('.enc')) {
+        if (!conf.passphrase) throw new HttpError(400, 'This backup is encrypted: set the passphrase in the backup settings first');
+        await crypt.decryptFile(tmp, dest, conf.passphrase);
+      } else {
+        await fs.move(tmp, dest, { overwrite: true });
+      }
+    } finally {
+      await fs.remove(tmp);
+    }
+    const v = await this.verify(id, localName);
+    if (!v.ok) throw new HttpError(400, `The downloaded backup is not usable: ${v.error}`);
+    return localName;
   }
 
   /** Unpack a backup into a temp folder; the caller moves things into place. */
@@ -92,6 +257,7 @@ class Backups {
     const file = this.file(id, name);
     if (!(await fs.pathExists(file))) throw new HttpError(404, 'Backup not found');
     await fs.remove(file);
+    await fs.remove(this.statusFile(id, name));
   }
 
   async removeAll(id) {
@@ -129,4 +295,4 @@ class Backups {
   }
 }
 
-module.exports = { Backups, NAME_RE };
+module.exports = { Backups, NAME_RE, REMOTE_RE };

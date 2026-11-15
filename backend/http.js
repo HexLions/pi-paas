@@ -27,7 +27,7 @@ const ROLE_RULES = [
   [null, /^\/api\/tokens(\/|$)/, 'viewer'],
   [null, /^\/api\/(users|settings|panel)(\/|$)/, 'admin'],
   ['DELETE', /^\/api\/apps\/[^/]+$/, 'admin'],
-  ['GET', /^\/api\/apps\/[^/]+\/(settings|db|files|upload|jobs)(\/|$)/, 'operator'],
+  ['GET', /^\/api\/apps\/[^/]+\/(settings|db|files|upload|jobs|sql|source|backups-remote)(\/|$)/, 'operator'],
   ['GET', /^\/api\/apps\/[^/]+\/backups\/[^/]+\/download$/, 'operator'],
   ['GET', null, 'viewer'],
   ['HEAD', null, 'viewer'],

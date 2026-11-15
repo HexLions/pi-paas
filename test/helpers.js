@@ -113,6 +113,7 @@ async function startPanel(extraEnv = {}) {
 
   async function close() {
     await panel.service.settle();
+    await panel.backups.settle();
     if (panel.jobs) panel.jobs.stopAll();
     if (panel.monitor) panel.monitor.stop();
     if (panel.proxy) await panel.proxy.stop();

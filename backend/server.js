@@ -54,10 +54,11 @@ async function createPanel({ cfg = config.load(), log = console } = {}) {
   service.proxy = proxy;
   service.monitor = monitor;
   backups.notifier = notifier;
+  backups.settings = settings;
   service.jobs = jobs;
   const ctx = {
     cfg, registry, auth, pm, backups, service, settings, notifier, monitor, jobs, proxy, mdns, runAs, log,
-    modules: [require('./routes/admin'), require('./routes/runtime'), require('./routes/deploy')],
+    modules: [require('./routes/admin'), require('./routes/runtime'), require('./routes/deploy'), require('./routes/data')],
   };
   ctx.app = createHttpApp(ctx);
   return ctx;
