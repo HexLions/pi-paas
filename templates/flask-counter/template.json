@@ -1,0 +1,1 @@
+{ "name": "Flask + SQLite", "type": "python", "db": "sqlite", "order": 4, "description": "A Flask app that counts visits in its SQLite database. A starting point for Python apps (installs Flask with pip)." }

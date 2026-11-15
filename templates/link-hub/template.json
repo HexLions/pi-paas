@@ -1,0 +1,1 @@
+{ "name": "Link hub", "type": "static", "order": 1, "description": "A start page with links to the services on your network. Edit links.json in the file manager." }

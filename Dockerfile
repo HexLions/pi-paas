@@ -1,40 +1,24 @@
-FROM node:20-alpine
+# Pi-PaaS, Docker Edition: the panel in a container, every app in its own
+# container started through the host's Docker socket.
+FROM node:22-alpine
 
-LABEL maintainer="HexLions"
-LABEL description="Pi-PaaS Docker Edition — Self-hosted PaaS panel"
-LABEL version="2.0.0"
+RUN apk add --no-cache docker-cli docker-cli-buildx git tar curl
 
-# Install docker CLI (to talk to host Docker socket)
-RUN apk add --no-cache \
-    docker-cli \
-    curl \
-    bash \
-    git \
-    python3 \
-    py3-pip \
-    nginx \
-    openssl
+WORKDIR /opt/pi-paas
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+COPY backend ./backend
+COPY frontend ./frontend
+COPY assets ./assets
+COPY templates ./templates
+COPY cli ./cli
 
-WORKDIR /app
-
-# Install dependencies first (layer cache)
-COPY package.json package-lock.json* ./
-RUN npm install --production
-
-# Copy source
-COPY backend/ ./backend/
-COPY frontend/ ./frontend/
-COPY templates/ ./templates/
-
-# Data directory (mounted as volume in production)
-RUN mkdir -p /data/apps /data/logs /data/uploads
-
-# Nginx config for proxying apps
-COPY nginx.conf /etc/nginx/nginx.conf
+ENV NODE_ENV=production \
+    PIPAAS_RUNTIME=docker \
+    PIPAAS_DATA_DIR=/srv/pi-paas-data
 
 EXPOSE 9000
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:9000/api/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:${PIPAAS_PORT:-9000}/api/health || exit 1
 
 CMD ["node", "backend/server.js"]

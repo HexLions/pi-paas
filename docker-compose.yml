@@ -1,43 +1,21 @@
-version: "3.9"
-
+# Pi-PaaS, Docker Edition
+#   docker compose up -d        then open http://<host>:9000
+# The first password is printed in "docker compose logs" and saved in
+# /srv/pi-paas-data/initial-password.txt.
 services:
   pi-paas:
     build: .
     container_name: pi-paas
     restart: unless-stopped
-    ports:
-      - "9000:9000"          # Panel
-      - "3001-3200:3001-3200" # App ports
+    # Host networking: app ports, the built-in proxy (80/443) and .local names
+    # work exactly as in the Standalone Edition.
+    network_mode: host
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket
-      - pi-paas-data:/data                          # Persistent app data
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Same path inside and outside: Docker mounts app volumes by host path.
+      - /srv/pi-paas-data:/srv/pi-paas-data
     environment:
-      - DATA_DIR=/data
-      - PANEL_PORT=9000
-      - PORT_RANGE_START=3001
-      - PORT_RANGE_END=3200
-      - DOCKER_NETWORK=pi-paas-net
-    networks:
-      - pi-paas-net
-    labels:
-      - "com.hexlions.app=pi-paas"
-
-  # Optional: Nginx reverse proxy for nicer URLs
-  # Uncomment if you want http://<host>/apps/<appname> routing
-  # nginx-proxy:
-  #   image: nginx:alpine
-  #   ports:
-  #     - "80:80"
-  #   volumes:
-  #     - nginx-conf:/etc/nginx/conf.d
-  #   depends_on:
-  #     - pi-paas
-
-networks:
-  pi-paas-net:
-    name: pi-paas-net
-    driver: bridge
-
-volumes:
-  pi-paas-data:
-    name: pi-paas-data
+      PIPAAS_RUNTIME: docker
+      PIPAAS_DATA_DIR: /srv/pi-paas-data
+      # PIPAAS_PASSWORD: choose-a-first-password
+      # PIPAAS_PROXY_PORT: "off"     # if something else already uses port 80

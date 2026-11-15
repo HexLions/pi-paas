@@ -1,14 +1,14 @@
 [![Pi-PaaS](assets/banner.svg)](assets/banner.svg)
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/HexLions/pi-paas)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](https://github.com/HexLions/pi-paas/blob/main/LICENSE)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![CI](https://github.com/HexLions/pi-paas/actions/workflows/ci.yml/badge.svg)](https://github.com/HexLions/pi-paas/actions/workflows/ci.yml)
 [![Node 18+](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org)
-[![Docker Required](https://img.shields.io/badge/docker-required-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com)
-[![Platforms](https://img.shields.io/badge/platforms-any%20Linux%20with%20Docker-orange.svg)](https://github.com/HexLions/pi-paas)
+[![Platforms](https://img.shields.io/badge/platforms-Debian%20%7C%20Fedora%20%7C%20Arch%20%7C%20Alpine%20%7C%20SUSE-orange.svg)](#-supported-distributions)
 
-**The tiniest self-hosted PaaS for your Raspberry Pi (and any Linux box) — Docker Edition**  
-Deploy, manage, edit and backup web apps directly from your browser.  
-Each app runs in its own Docker container with full isolation.
+**The tiniest self-hosted PaaS for your Raspberry Pi (and any Linux box)**
+Deploy, manage, edit and back up web apps from your browser.
+No Docker required: apps run as native processes, supervised by Pi-PaaS.
 
 ---
 
@@ -17,93 +17,120 @@ Each app runs in its own Docker container with full isolation.
 |  | **Standalone** (`main` branch) | **Docker Edition** (`docker` branch) |
 | --- | --- | --- |
 | **Apps run as** | Native processes | Docker containers |
-| **Isolation** | Shared filesystem | Full container isolation |
+| **Isolation** | Optional unprivileged app user | Full container isolation |
 | **Requires Docker** | ❌ No | ✅ Yes |
 | **Install** | `bash install.sh` | `docker compose up -d` |
 | **Best for** | Raspberry Pi, lightweight setups | Production, multi-app servers |
-| **App deployment** | Upload ZIP → process spawned | Upload ZIP → image built → container started |
-| **Port management** | Direct port binding | Docker port mapping |
-| **Auto-Dockerfile** | N/A | Generated for Node, Python, Static if missing |
-| **Custom Dockerfile** | N/A | ✅ Use your own if included in ZIP |
 
-```
-HexLions/pi-paas
-├── main    ← Standalone Edition
-└── docker  ← Docker Edition (this branch)
-```
-
-👉 **Want the Standalone edition?** Switch to the [`main` branch](https://github.com/HexLions/pi-paas/tree/main)
+👉 **Want the Docker edition?** Switch to the [`docker` branch](https://github.com/HexLions/pi-paas/tree/docker). It is still based on v1.0 and does not have the v1.1 changes below yet.
 
 ---
 
 ## ✨ Features
 
-* 🚀 **One-click deploy** — Upload a `.zip` or single `.html` file and it's live
-* 🔌 **4 app types** — Static HTML, Node.js, Python/Flask, React/Vue
-* 🐳 **Full container isolation** — Each app runs in its own Docker container
-* 🤖 **Auto-Dockerfile generation** — No Dockerfile? Pi-PaaS generates one for Node, Python and Static apps
-* 📄 **Custom Dockerfile support** — Include your own `Dockerfile` in the ZIP for full control
-* 🗃️ **3 database options** — None, SQLite, or PostgreSQL (per-app, custom naming)
-* 🎯 **Port picker** — Choose your port or auto-assign, with live availability check against Docker bindings and system processes
-* 📂 **Built-in code editor** — CodeMirror with syntax highlighting for 10+ languages
-* 📋 **Live logs** — View each container's stdout/stderr from the panel
-* 💾 **Backup system** — Manual or scheduled (daily/weekly) backups with one-click restore, download, and automatic rotation (keeps last 5)
-* 🗃️ **Database management** — Rename SQLite or PostgreSQL databases from the panel
-* 🔄 **Auto-restart** — Containers restart automatically on reboot via Docker restart policy
+* 🚀 **One-click deploy**: upload a `.zip` or a single `.html` file and it's live
+* 🔌 **4 app types**: static HTML, Node.js, Python/Flask, React/Vue/Vite
+* 🔐 **Login-protected panel**: password with scrypt hashing, secure session cookies, CSRF protection and login rate limiting
+* 🧱 **Background builds**: `npm install`, `pip install` and `npm run build` run in the background and stream into the app log
+* ↩️ **Safe updates**: if a new version fails to build, the previous one is put back automatically
+* ♻️ **Crash recovery**: crashed apps restart with backoff; an app that keeps crashing is parked instead of looping
+* 🗃️ **Databases**: SQLite or PostgreSQL per app; PostgreSQL apps get their own database **and** login, ready in `DATABASE_URL`
+* 💽 **Persistent volume**: every app gets a `DATA_DIR` folder that survives updates
+* ⚙️ **Environment variables & start command** per app, editable from the panel
+* 📂 **Built-in code editor**: CodeMirror with syntax highlighting, search & replace, folding, autocomplete; file upload and download
+* 📋 **Live logs** with auto-refresh and automatic rotation
+* 💾 **Backups**: manual or scheduled (daily/weekly), with one-click restore, download and rotation; includes app files, data volume and PostgreSQL dump
+* 🌡️ **System stats**: CPU temperature, load, memory and free disk in the header
+* 🌍 **6 languages**: English, Italiano, Español, Français, Deutsch, 日本語
+* 🌓 **Dark and light theme**, works on phones
+* 📴 **Works offline**: no CDN needed, everything is served by the Pi
+* 🐧 **Multi-distro installer**: systemd or OpenRC
 
 ---
 
 ## 🚀 Quick Start
 
-### Docker Edition
-
 ```bash
-git clone -b docker https://github.com/HexLions/pi-paas.git
+git clone https://github.com/HexLions/pi-paas.git
 cd pi-paas
-docker compose up -d
+sudo bash install.sh
 # → http://<your-ip>:9000
 ```
 
-> Requires Docker and Docker Compose v2 installed on the host.
+The installer asks you to choose a panel password. If you skip it, a random one is generated, printed at the end, and saved in `~/pi-paas-data/initial-password.txt` until you change it from the panel.
+
+### Installer options
+
+| Option | Meaning |
+| --- | --- |
+| `--port N` | Panel port (default `9000`) |
+| `--no-postgres` | Do not install PostgreSQL (SQLite still works) |
+| `--nginx` | Write an nginx snippet that publishes the panel at `/pi-paas/` |
+| `--app-user NAME` | Run apps and builds as this unprivileged user (created if missing) |
+| `--no-app-user` | Run apps as the panel user |
+| `--password PW` | Set the panel password without being asked |
+| `-y`, `--yes` | Do not ask questions |
+| `--uninstall` | Remove the service and code, keep your data |
+
+On a **new install as root**, apps run as the unprivileged user `pipaas-apps` by default, so an uploaded app cannot read the panel's password or other system files. Upgrades keep their previous behaviour unless you pass `--app-user`.
 
 ---
 
-## 📁 Architecture
+## 🐧 Supported Distributions
+
+| Family | Distributions |
+| --- | --- |
+| **Debian** | Debian, Ubuntu, DietPi, Raspberry Pi OS, Linux Mint, Pop!_OS, Kali, Zorin, elementary |
+| **Fedora** | Fedora, CentOS, Rocky Linux, AlmaLinux, RHEL |
+| **Arch** | Arch Linux, Manjaro, EndeavourOS, Garuda |
+| **Alpine** | Alpine Linux (OpenRC) |
+| **SUSE** | openSUSE Leap, openSUSE Tumbleweed, SLES |
+
+---
+
+## 📁 Layout
 
 ```
-pi-paas/                        ← Project root
-├── Dockerfile
-├── docker-compose.yml
-├── nginx.conf
-├── backend/server.js           ← Uses dockerode instead of child_process
-├── frontend/index.html
-└── .dockerignore
+~/pi-paas/                  ← Code (safe to delete & reinstall)
+├── backend/                  server.js (entry), http.js (API), apps.js, processes.js,
+│                             build.js, backups.js, database.js, archive.js, auth.js …
+├── frontend/                 index.html, app.js, i18n.js, style.css
+├── assets/
+└── install.sh
 
-pi-paas-data (Docker volume)    ← Persistent data (never lost on updates)
-├── apps/
-├── backups/
-├── uploads/
-└── registry.json
+~/pi-paas-data/             ← Your data (never touched by updates)
+├── apps/<id>/                app code
+├── volumes/<id>/             persistent data (DATA_DIR, SQLite)
+├── backups/<id>/             .tar.gz backups
+├── logs/<id>.log             app logs (rotated at 5 MB)
+├── registry.json             app list (mode 600)
+└── auth.json                 panel password hash (mode 600)
 ```
 
 ---
 
 ## 📱 Deploying Apps
 
+Every app gets these environment variables:
+
+| Variable | Description |
+| --- | --- |
+| `PORT` | Assigned port (3001–3200). Your app must listen on it. |
+| `DATA_DIR` | Folder that survives updates; put uploads and data files here |
+| `DATABASE_URL` | Database connection string (`sqlite:/…` or `postgresql://user:pass@localhost:5432/db`) |
+| `SQLITE_PATH` | Path to the `.db` file (SQLite only) |
+| `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` | PostgreSQL connection (PostgreSQL only) |
+| `PIPAAS_APP_ID` | The app's id |
+
+Add your own variables from **⚙ Settings** on the app card. Apps do **not** inherit the panel's environment.
+
 ### Static HTML/CSS/JS
 
-Upload a `.zip` containing an `index.html`, or upload a single `.html` file directly:
-
-```
-my-site.zip
-├── index.html
-├── style.css
-└── script.js
-```
+Upload a `.zip` containing an `index.html`, or upload a single `.html` file.
 
 ### Node.js
 
-Your app must read the port from `process.env.PORT`:
+Pi-PaaS runs `npm ci`/`npm install --omit=dev`, then `npm start` if `package.json` has a start script, otherwise `server.js`, `app.js`, `index.js` or `main.js`.
 
 ```js
 const PORT = process.env.PORT || 3000;
@@ -112,144 +139,112 @@ app.listen(PORT, () => console.log(`Running on ${PORT}`));
 
 ### Python / Flask
 
-Your app must read the port from `os.environ['PORT']`:
+Pi-PaaS creates a `venv`, installs `requirements.txt` and runs `server.py`, `main.py`, `app.py` or `wsgi.py`. Listen on `0.0.0.0`:
 
 ```python
 import os
-port = int(os.environ.get('PORT', 3000))
-app.run(host='0.0.0.0', port=port)
+app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 3000)))
 ```
 
-### React / Vue
+For production servers set a **custom start command**, e.g. `venv/bin/gunicorn -b 0.0.0.0:$PORT app:app` (add `gunicorn` to `requirements.txt`).
 
-Upload the full project with `package.json`. Pi-PaaS runs `npm install` + `npm run build` and serves `build/` or `dist/`.
+### React / Vue / Vite
 
-### Custom Dockerfile
+Upload the project with `package.json`. Pi-PaaS runs `npm install` (including devDependencies) and `npm run build`, then serves `dist/`, `build/` or `out/`.
 
-Include a `Dockerfile` in your ZIP and Pi-PaaS will use it directly:
+---
 
+## 💾 Backups
+
+* **Manual**: "Create backup now"
+* **Scheduled**: daily (3:00) or weekly (Sunday 3:00)
+* **Contents**: app files (without `node_modules`/`venv`), the data volume, the PostgreSQL dump, metadata
+* **Restore**: stops the app, restores files, data and database, reinstalls dependencies, starts it again
+* **Rotation**: keeps the last 5 per app (`PIPAAS_MAX_BACKUPS`)
+
+---
+
+## 🔧 Configuration
+
+The installer writes these into the service file; you can also set them by hand.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PIPAAS_PORT` | `9000` | Panel port |
+| `PIPAAS_HOST` | `0.0.0.0` | Panel listen address |
+| `PIPAAS_DATA_DIR` | `~/pi-paas-data` | Data folder |
+| `PIPAAS_PORT_RANGE` | `3001-3200` | Ports handed out to apps |
+| `PIPAAS_APP_USER` | *(empty)* | Run apps and builds as this user (panel must run as root) |
+| `PIPAAS_PUBLIC_HOST` | *(request host)* | Host name used in app links |
+| `PIPAAS_MAX_BACKUPS` | `5` | Backups kept per app |
+| `PIPAAS_UPLOAD_LIMIT_MB` | `100` | Maximum upload size |
+| `PIPAAS_BUILD_TIMEOUT` | `600` | Seconds allowed for install + build |
+| `PIPAAS_MAX_LOG_MB` | `5` | Log size before rotation |
+| `PIPAAS_TRUST_PROXY` | *(off)* | Set to `1` behind a local reverse proxy |
+| `PIPAAS_PASSWORD` | *(empty)* | First password, used only when none is set yet |
+| `PIPAAS_AUTH` | *(on)* | `off` disables the login. Only behind your own authentication. |
+
+Forgot the password? On the server:
+
+```bash
+node ~/pi-paas/backend/cli.js set-password
 ```
-my-app.zip
-├── Dockerfile
-├── server.js
-└── package.json
-```
-
----
-
-## 🎯 Port Selection
-
-* **Leave empty** → auto-assigns next free port (3001–3200)
-* **Enter a specific port** → click "Check" to verify availability
-* **Change later** → update port from the Update modal
-
-The checker scans both Pi-PaaS apps, Docker port bindings and system processes.
-
----
-
-## 🗃️ Database Management
-
-* Choose **SQLite**, **PostgreSQL**, or **None** at deploy time
-* Set a **custom database name** (auto-generated if empty)
-* **Rename** databases later via the 🗃️ DB button
-
-| Variable | Description |
-| --- | --- |
-| `PORT` | Assigned port (3001–3200) |
-| `DATABASE_URL` | Database connection string |
-| `SQLITE_PATH` | Path to `.db` file (SQLite only) |
-| `PGDATABASE` | PostgreSQL database name (PG only) |
-
----
-
-## 💾 Backup System
-
-* **Manual** — click "Create Backup Now" for instant `.tar.gz` archive
-* **Scheduled** — Daily (3am) or Weekly (Sunday 3am) via `node-cron`
-* **Contents** — app files + PostgreSQL dump + SQLite DB + metadata
-* **Restore** — one-click: stops container, restores files + DB, restarts
-* **Download** — grab any backup as `.tar.gz`
-* **Auto-rotation** — keeps last 5 backups per app
-
-Backups stored in the `pi-paas-data` Docker volume under `backups/<app-id>/`.
-
----
-
-## ⌨️ Editor Shortcuts
-
-| Shortcut | Action |
-| --- | --- |
-| `Ctrl+S` | Save file |
-| `Ctrl+F` | Find |
-| `Ctrl+H` | Find & Replace |
-| `Ctrl+/` | Toggle comment |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Shift+Z` | Redo |
-| `Tab` / `Shift+Tab` | Indent / Unindent |
-| `Ctrl+Space` | Autocomplete |
-| `Ctrl+J` | Jump to matching tag |
-
-Supported: HTML, CSS, JavaScript, JSON, Python, Markdown, SQL, Shell, YAML, XML.
 
 ---
 
 ## 🔄 Updating
 
 ```bash
-git pull origin docker
-docker compose up -d --build    # Volume data preserved!
+cd ~/pi-paas
+git pull origin main
+sudo bash install.sh     # your data in ~/pi-paas-data/ is preserved
 ```
 
----
+Upgrading from v1.0: the registry is migrated automatically, existing apps keep running, and you are asked for a panel password (or one is generated).
 
 ## 🛠️ Service Management
 
 ```bash
-docker compose ps
-docker compose logs -f
-docker compose restart
-docker compose down   # stop (data preserved in volume)
+sudo systemctl status pi-paas
+sudo systemctl restart pi-paas
+journalctl -u pi-paas -f
 ```
+
+On Alpine (OpenRC): `rc-service pi-paas status` and `/var/log/pi-paas.log`.
 
 ---
 
-## 🔗 Accessing the Panel
+## 🧑‍💻 Development
 
-| Method | URL |
-| --- | --- |
-| **Direct** | `http://<IP>:9000` |
-| **Via nginx** | `http://<IP>/pi-paas/` |
-| **Each app** | `http://<IP>:<assigned-port>` |
+```bash
+npm install
+npm run dev      # panel on :9000, data in ./.dev-data, password "devpassword"
+npm test         # unit + API tests (real HTTP, real child processes)
+npm run lint     # syntax check + shellcheck
+```
+
+Tests need Node 18+ and `tar`; no root, PostgreSQL or Python.
+
+---
+
+## 🔒 Security notes
+
+* The panel can run arbitrary code on your machine: that is its job. Keep it on your LAN or behind a VPN, and use a strong password.
+* Apps share the app user with each other. They are kept away from the panel and the system, not from each other.
+* PostgreSQL passwords are stored in `registry.json` (mode 600) and only shown in the database dialog of their app.
 
 ---
 
 ## 📋 Changelog
 
-### v1.0.0 (Current)
-
-* 🐳 Full Docker isolation — each app in its own container via dockerode
-* 🤖 Auto-Dockerfile generation for Node, Python and Static apps
-* 📄 Custom Dockerfile support
-* 💾 Backup system with manual/scheduled backups, restore, download, auto-rotation
-* 🗃️ Database management — custom DB names, rename SQLite/PostgreSQL
-* 🎯 Port picker with Docker + system port scanning
-* 📂 Built-in CodeMirror editor with syntax highlighting
-* 📁 File manager with create/edit/delete
-* 📦 Safe update architecture (code vs volume data separation)
-* 🚀 Deploy static HTML, Node.js, Python, React apps
-
----
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## 🤝 Contributing
 
-Contributions, issues and feature requests are welcome! Check the [issues page](https://github.com/HexLions/pi-paas/issues).
-
----
+Contributions, issues and feature requests are welcome! Check the [issues page](https://github.com/HexLions/pi-paas/issues). Please run `npm test` before opening a pull request.
 
 ## 📄 License
 
-This project is licensed under the **GNU General Public License v3.0** — see the [LICENSE](https://github.com/HexLions/pi-paas/blob/main/LICENSE) file for details.
-
-This means you are free to use, modify and distribute this software, but any derivative work must also be released under GPL-3.0 with source code available.
+Licensed under the **GNU General Public License v3.0**, see [LICENSE](LICENSE).
 
 Made with ❤️ by [HexLions](https://github.com/HexLions)
