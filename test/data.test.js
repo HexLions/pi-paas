@@ -81,7 +81,10 @@ describe('data features', () => {
     await p.req('PUT', '/api/settings', { json: { backups: { target: 'none' } } });
   });
 
-  it('runs SQL on the app database with role checks', async () => {
+  // node:sqlite arrived in Node 22.5; on older Node the console says so instead.
+  let hasSqlite = true;
+  try { require('node:sqlite'); } catch { hasSqlite = false; }
+  it('runs SQL on the app database with role checks', { skip: !hasSqlite && 'needs node:sqlite (Node 22.5+)' }, async () => {
     let r = await p.req('POST', '/api/apps/shop/sql', { json: { sql: 'SELECT 1' } });
     assert.equal(r.status, 400); // the database file does not exist yet
     r = await p.req('POST', '/api/apps/shop/sql', { json: { sql: 'CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)', write: true } });

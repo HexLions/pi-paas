@@ -51,7 +51,7 @@ describe('API', () => {
   });
 
   it('validates deploy input', async () => {
-    let r = await p.req('POST', '/api/apps', { form: zipForm({ name: 'x', type: 'php' }, 'a.zip', NODE_APP) });
+    let r = await p.req('POST', '/api/apps', { form: zipForm({ name: 'x', type: 'cobol' }, 'a.zip', NODE_APP) });
     assert.equal(r.status, 400);
     r = await p.req('POST', '/api/apps', { form: zipForm({ name: 'x', type: 'node' }, 'evil.exe', Buffer.from('x')) });
     assert.equal(r.status, 400);
