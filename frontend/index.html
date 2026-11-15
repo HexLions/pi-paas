@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark light">
   <title>Pi-PaaS</title>
-  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#b02a55">
   <link rel="stylesheet" href="vendor/codemirror/lib/codemirror.css">
   <link rel="stylesheet" href="vendor/codemirror/theme/material-darker.css">
   <link rel="stylesheet" href="vendor/codemirror/addon/dialog/dialog.css">
@@ -19,8 +22,14 @@
     <form id="loginForm" class="login-card">
       <span class="mark big" aria-hidden="true">π</span>
       <h1 class="wordmark">Pi-PaaS</h1>
+      <label for="loginUser" data-i18n="username">User</label>
+      <input id="loginUser" autocomplete="username" value="admin" autocapitalize="none" spellcheck="false" required>
       <label for="loginPw" data-i18n="password">Password</label>
       <input id="loginPw" type="password" autocomplete="current-password" required autofocus>
+      <div id="loginCodeWrap" hidden>
+        <label for="loginCode" data-i18n="totpCode">Code</label>
+        <input id="loginCode" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6">
+      </div>
       <button class="btn btn-p wide" type="submit" data-i18n="login">Log in</button>
       <p class="hint" id="loginHint" hidden data-i18n="initialPwHint"></p>
       <p class="err" id="loginErr" role="alert"></p>
@@ -39,7 +48,7 @@
       <div class="top-actions">
         <select id="langSel" class="sel" aria-label="Language"></select>
         <button class="btn ghost icon" id="themeBtn" type="button" aria-label="Theme">◐</button>
-        <button class="btn ghost" id="pwBtn" type="button" data-i18n="changePassword">Password</button>
+        <button class="btn ghost" id="setBtn" type="button" data-i18n="settings">Settings</button>
         <button class="btn ghost" id="logoutBtn" type="button" data-i18n="logout">Log out</button>
       </div>
     </header>
@@ -47,6 +56,11 @@
     <div class="banner warn" id="pwBanner" hidden>
       <span data-i18n="initialPwBanner"></span>
       <button class="btn small" type="button" id="pwBannerBtn" data-i18n="changePassword"></button>
+    </div>
+
+    <div class="banner info" id="updBanner" hidden>
+      <span id="updText"></span>
+      <button class="btn small" type="button" id="updBtn" data-i18n="seeUpdate"></button>
     </div>
 
     <main class="main">
@@ -81,13 +95,24 @@
   <div class="ov" id="dMod" role="dialog" aria-modal="true" aria-labelledby="dTitle"><form class="mod" id="dForm">
     <button class="mod-x" type="button" data-close>×</button>
     <h2 id="dTitle" data-i18n="deployTitle"></h2>
+    <div class="seg" role="tablist" id="dSrc">
+      <button type="button" role="tab" data-src="upload" aria-selected="true" data-i18n="srcUpload"></button>
+      <button type="button" role="tab" data-src="git" aria-selected="false" data-i18n="srcGit"></button>
+      <button type="button" role="tab" data-src="template" aria-selected="false" data-i18n="srcTemplate"></button>
+    </div>
+    <div id="dTemplates" class="tpl-grid" hidden></div>
     <div class="fg"><label for="dName" data-i18n="appName"></label><input id="dName" maxlength="60" data-i18n-ph="appNamePh" autocomplete="off" required></div>
     <div class="fg"><label for="dType" data-i18n="appType"></label>
       <select id="dType">
-        <option value="static" data-i18n="typeStatic"></option>
-        <option value="node" data-i18n="typeNode"></option>
-        <option value="python" data-i18n="typePython"></option>
-        <option value="react" data-i18n="typeReact"></option>
+        <option value="static" data-i18n="type_static"></option>
+        <option value="node" data-i18n="type_node"></option>
+        <option value="python" data-i18n="type_python"></option>
+        <option value="react" data-i18n="type_react"></option>
+        <option value="php" data-i18n="type_php"></option>
+        <option value="deno" data-i18n="type_deno"></option>
+        <option value="bun" data-i18n="type_bun"></option>
+        <option value="binary" data-i18n="type_binary"></option>
+        <option value="docker" data-i18n="type_docker"></option>
       </select>
       <p class="help" id="dTypeHelp"></p>
     </div>
@@ -103,7 +128,18 @@
       <div class="row"><input type="number" id="dPort" data-i18n-ph="autoAssign"><button class="btn btn-s" type="button" data-check-port="dPort" data-i18n="check"></button></div>
       <div class="port-info" id="dPortInfo"></div>
     </div>
-    <div class="fg"><label data-i18n="projectFile"></label>
+    <div class="fg" id="dGit" hidden>
+      <label for="dGitUrl" data-i18n="gitUrl"></label>
+      <input id="dGitUrl" spellcheck="false" placeholder="https://github.com/me/site.git">
+      <div class="row two">
+        <div><label for="dGitBranch" data-i18n="gitBranch"></label><input id="dGitBranch" value="main" spellcheck="false"></div>
+        <div><label for="dGitSubdir" data-i18n="gitSubdir"></label><input id="dGitSubdir" spellcheck="false" data-i18n-ph="optional"></div>
+      </div>
+      <label for="dGitToken" data-i18n="gitToken"></label>
+      <input id="dGitToken" type="password" autocomplete="off" data-i18n-ph="gitTokenPh">
+      <p class="help" data-i18n-html="gitHelp"></p>
+    </div>
+    <div class="fg" id="dUpload"><label data-i18n="projectFile"></label>
       <label class="uz" id="dZone"><input type="file" id="dFile" accept=".zip,.html,.htm"><span class="uz-t" data-i18n-html="uploadText"></span><span class="uz-f" id="dFn"></span></label>
     </div>
     <button class="btn btn-p wide" type="submit" id="dBtn" data-i18n="deploy"></button>
@@ -128,10 +164,14 @@
   <div class="ov" id="lMod" role="dialog" aria-modal="true"><div class="mod wide-mod">
     <button class="mod-x" type="button" data-close>×</button>
     <h2><span data-i18n="logsTitle"></span> <span id="lName"></span></h2>
+    <div class="row gap">
+      <input id="lSearch" class="filter grow" type="search" data-i18n-ph="searchLogs" aria-label="Search">
+      <span class="live" id="lLive"><i class="led"></i><span data-i18n="live"></span></span>
+    </div>
     <pre class="logs-c" id="lC"></pre>
     <div class="row gap">
       <button class="btn btn-s" type="button" id="lRefresh" data-i18n="refresh"></button>
-      <label class="chk"><input type="checkbox" id="lAuto" checked> <span data-i18n="autoRefresh"></span></label>
+      <label class="chk"><input type="checkbox" id="lAuto" checked> <span data-i18n="followLog"></span></label>
       <span class="spacer"></span>
       <button class="btn btn-s btn-d" type="button" id="lClear" data-i18n="clearLogs"></button>
     </div>
@@ -187,6 +227,10 @@
     </div>
     <button class="btn btn-p btn-s wide" type="button" id="bkBtn" data-i18n="createBackup"></button>
     <div id="bList" class="bk-list"></div>
+    <section id="bRemoteWrap" hidden>
+      <h3 class="sub" data-i18n="offsiteTitle"></h3>
+      <div id="bRemote" class="bk-list"></div>
+    </section>
   </div></div>
 
   <!-- Database -->
@@ -198,6 +242,18 @@
       <div class="row"><input id="dbNew"><button class="btn btn-s btn-p" type="submit" id="dbBtn" data-i18n="rename"></button></div>
       <p class="help" data-i18n="renameHelp"></p>
     </div>
+    <section class="sql" id="sqlWrap">
+      <h3 class="sub" data-i18n="sqlTitle"></h3>
+      <div class="sql-tables" id="sqlTables"></div>
+      <textarea id="sqlText" rows="4" spellcheck="false" placeholder="SELECT * FROM ..."></textarea>
+      <div class="row gap">
+        <label class="chk" id="sqlWriteWrap"><input type="checkbox" id="sqlWrite"> <span data-i18n="sqlWrite"></span></label>
+        <span class="spacer"></span>
+        <span class="dim small" id="sqlInfo"></span>
+        <button class="btn btn-s btn-p" type="button" id="sqlRun" data-i18n="sqlRun"></button>
+      </div>
+      <div class="sql-out" id="sqlOut"></div>
+    </section>
   </form></div>
 
   <!-- Settings -->
@@ -212,7 +268,40 @@
       <input id="sCmd" spellcheck="false" data-i18n-ph="startCommandPh">
       <p class="help" data-i18n="startCommandHelp"></p>
     </div>
-    <button class="btn btn-p wide" type="submit" id="sBtn" data-i18n="saveRestart"></button>
+    <fieldset class="fs">
+      <legend data-i18n="limitsTitle"></legend>
+      <div class="row three">
+        <div><label for="sMem" data-i18n="limitMem"></label><input id="sMem" type="number" min="32" step="32" data-i18n-ph="noLimit"></div>
+        <div><label for="sCpu" data-i18n="limitCpu"></label><input id="sCpu" type="number" min="5" max="1600" step="5" data-i18n-ph="noLimit"></div>
+        <div><label for="sNice" data-i18n="limitNice"></label><input id="sNice" type="number" min="0" max="19" data-i18n-ph="normal"></div>
+      </div>
+      <p class="help" data-i18n="limitsHelp"></p>
+    </fieldset>
+    <fieldset class="fs">
+      <legend data-i18n="healthTitle"></legend>
+      <label class="chk"><input type="checkbox" id="sHealthOn"> <span data-i18n="healthOn"></span></label>
+      <div class="row"><label for="sHealthPath" class="dim" data-i18n="healthPath"></label><input id="sHealthPath" spellcheck="false" value="/"></div>
+      <label class="chk"><input type="checkbox" id="sHealthRestart"> <span data-i18n="healthRestart"></span></label>
+    </fieldset>
+    <fieldset class="fs">
+      <legend data-i18n="domainsTitle"></legend>
+      <div id="sLinks" class="links"></div>
+      <textarea id="sDomains" rows="2" spellcheck="false" placeholder="blog.example.com"></textarea>
+      <p class="help" data-i18n-html="domainsHelp"></p>
+    </fieldset>
+    <fieldset class="fs" id="sGit" hidden>
+      <legend data-i18n="gitTitle"></legend>
+      <div class="row two">
+        <div><label for="sGitBranch" data-i18n="gitBranch"></label><input id="sGitBranch" spellcheck="false"></div>
+        <div><label for="sGitToken" data-i18n="gitToken"></label><input id="sGitToken" type="password" autocomplete="off" data-i18n-ph="keepToken"></div>
+      </div>
+      <label data-i18n="webhookUrl"></label>
+      <div class="copy"><code id="sHookUrl"></code><button class="btn small" type="button" data-copy="sHookUrl" data-i18n="copy"></button></div>
+      <label data-i18n="webhookSecret"></label>
+      <div class="copy"><code id="sHookSecret" class="secret"></code><button class="btn small" type="button" data-copy="sHookSecret" data-i18n="copy"></button></div>
+      <p class="help" data-i18n-html="webhookHelp"></p>
+    </fieldset>
+    <button class="btn btn-p wide" type="submit" id="sBtn" data-i18n="saveSettings"></button>
   </form></div>
 
   <!-- Password -->
@@ -224,6 +313,59 @@
     <div class="fg"><label for="pNew2" data-i18n="repeatPassword"></label><input id="pNew2" type="password" minlength="8" autocomplete="new-password" required></div>
     <button class="btn btn-p wide" type="submit" data-i18n="save"></button>
   </form></div>
+
+  <!-- Metrics -->
+  <div class="ov" id="mMod" role="dialog" aria-modal="true"><div class="mod wide-mod">
+    <button class="mod-x" type="button" data-close>×</button>
+    <h2><span data-i18n="metricsTitle"></span><span id="mName" class="tname"></span></h2>
+    <p class="dim" id="mHealth"></p>
+    <div class="charts" id="mCharts"></div>
+    <label class="chk"><input type="checkbox" id="mTable"> <span data-i18n="showTable"></span></label>
+    <div id="mTableOut"></div>
+  </div></div>
+
+  <!-- Releases -->
+  <div class="ov" id="rMod" role="dialog" aria-modal="true"><div class="mod">
+    <button class="mod-x" type="button" data-close>×</button>
+    <h2><span data-i18n="releasesTitle"></span><span id="rName" class="tname"></span></h2>
+    <p class="dim" id="rCurrent"></p>
+    <div id="rList" class="bk-list"></div>
+    <p class="help" data-i18n="releasesHelp"></p>
+  </div></div>
+
+  <!-- Scheduled tasks -->
+  <div class="ov" id="jMod" role="dialog" aria-modal="true"><div class="mod wide-mod">
+    <button class="mod-x" type="button" data-close>×</button>
+    <h2><span data-i18n="jobsTitle"></span><span id="jName" class="tname"></span></h2>
+    <div id="jList" class="bk-list"></div>
+    <form id="jForm" class="job-form">
+      <div class="row three">
+        <div><label for="jJobName" data-i18n="jobName"></label><input id="jJobName" required maxlength="60"></div>
+        <div><label for="jSchedule" data-i18n="jobSchedule"></label><input id="jSchedule" required spellcheck="false" value="0 3 * * *"></div>
+        <div class="end-col"><button class="btn btn-p" type="submit" data-i18n="jobAdd"></button></div>
+      </div>
+      <label for="jCommand" data-i18n="jobCommand"></label>
+      <input id="jCommand" required spellcheck="false" placeholder="node scripts/cleanup.js">
+      <p class="help" data-i18n-html="jobHelp"></p>
+    </form>
+  </div></div>
+
+  <!-- Panel settings -->
+  <div class="ov" id="psMod" role="dialog" aria-modal="true"><div class="mod settings-mod">
+    <button class="mod-x" type="button" data-close>×</button>
+    <h2 data-i18n="settings"></h2>
+    <div class="tabs" role="tablist" id="psTabs">
+      <button type="button" role="tab" data-tab="account" data-i18n="tabAccount"></button>
+      <button type="button" role="tab" data-tab="users" data-admin data-i18n="tabUsers"></button>
+      <button type="button" role="tab" data-tab="tokens" data-i18n="tabTokens"></button>
+      <button type="button" role="tab" data-tab="notify" data-i18n="tabNotify"></button>
+      <button type="button" role="tab" data-tab="network" data-admin data-i18n="tabNetwork"></button>
+      <button type="button" role="tab" data-tab="backup" data-admin data-i18n="tabBackup"></button>
+      <button type="button" role="tab" data-tab="update" data-admin data-i18n="tabUpdate"></button>
+      <button type="button" role="tab" data-tab="activity" data-i18n="tabActivity"></button>
+    </div>
+    <div class="tab-body" id="psBody"></div>
+  </div></div>
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
@@ -259,7 +401,9 @@
   <script src="vendor/codemirror/addon/hint/html-hint.js"></script>
   <script src="vendor/codemirror/addon/hint/css-hint.js"></script>
   <script src="vendor/codemirror/addon/hint/javascript-hint.js"></script>
+  <script src="vendor/qrcode/dist/qrcode.js"></script>
   <script src="i18n.js"></script>
   <script src="app.js"></script>
+  <script src="extras.js"></script>
 </body>
 </html>

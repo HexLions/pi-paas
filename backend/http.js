@@ -63,6 +63,8 @@ function createHttpApp(ctx) {
   // No max-age: after an upgrade the browser must pick up the new app.js (ETag keeps it cheap).
   app.use(express.static(frontend, { index: 'index.html' }));
   app.use('/vendor/codemirror', express.static(path.dirname(require.resolve('codemirror/package.json')), { maxAge: '1d' }));
+  // qrcode-generator exports only its main file: serve the folder it lives in (dist/).
+  app.use('/vendor/qrcode/dist', express.static(path.dirname(require.resolve('qrcode-generator')), { maxAge: '1d' }));
   app.use('/assets', express.static(path.join(__dirname, '..', 'assets'), { maxAge: '7d' }));
   // rawBody is kept for webhook signature checks.
   app.use('/api', express.json({ limit: `${MAX_EDIT_BYTES * 2}b`, verify: (req, res, buf) => { req.rawBody = buf; } }));

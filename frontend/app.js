@@ -14,7 +14,14 @@
     dirty: false,
     cm: null,
     logTimer: null,
+    logStream: null,
+    me: null,
+    runtimes: {},
+    templates: [],
+    src: 'upload',
   };
+  const isAdmin = () => state.me && state.me.role === 'admin';
+  const canOperate = () => state.me && state.me.role !== 'viewer';
 
   // ---------- helpers ----------
 
@@ -81,7 +88,7 @@
     if (id === 'eMod' && state.dirty && !confirm(t('unsavedClose'))) return;
     $(id).classList.remove('on');
     if (id === 'eMod') { destroyCM(); state.cur.files = null; state.file = null; state.dirty = false; }
-    if (id === 'lMod') { clearInterval(state.logTimer); state.logTimer = null; }
+    if (id === 'lMod') stopLogStream();
   }
 
   // ---------- i18n ----------
@@ -131,8 +138,9 @@
     $('ver').textContent = `v${st.version}`;
     $('loginHint').hidden = !st.initialPassword;
     $('pwBanner').hidden = !st.initialPassword;
-    $('pwBtn').hidden = !st.authRequired;
     $('logoutBtn').hidden = !st.authRequired;
+    state.me = st.user;
+    document.body.dataset.role = st.user ? st.user.role : '';
     if (st.authenticated) showPanel(); else showLogin();
   }
 
@@ -142,6 +150,8 @@
     $('panel').hidden = true;
     $('login').hidden = false;
     $('loginPw').value = '';
+    $('loginCode').value = '';
+    $('loginCodeWrap').hidden = true;
     $('loginPw').focus();
   }
 
@@ -149,13 +159,28 @@
     $('login').hidden = true;
     $('panel').hidden = false;
     refresh();
+    api('GET', 'api/runtimes').then((r) => { state.runtimes = r; }).catch(() => {});
+    if (window.Pi.onPanel) window.Pi.onPanel();
   }
 
   $('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     $('loginErr').textContent = '';
     try {
-      await api('POST', 'api/auth/login', { password: $('loginPw').value });
+      const res = await fetch('api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-PiPaaS': '1' },
+        body: JSON.stringify({ username: $('loginUser').value.trim().toLowerCase(), password: $('loginPw').value, code: $('loginCode').value.trim() || undefined }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.needCode) {
+          $('loginCodeWrap').hidden = false;
+          $('loginCode').focus();
+        }
+        $('loginErr').textContent = data.error || `HTTP ${res.status}`;
+        return;
+      }
       boot();
     } catch (err) { $('loginErr').textContent = err.message; }
   });
@@ -166,7 +191,7 @@
   });
 
   const openPw = () => { $('pForm').reset(); openM('pMod'); };
-  $('pwBtn').addEventListener('click', openPw);
+  $('setBtn').addEventListener('click', () => window.Pi.openPanelSettings());
   $('pwBannerBtn').addEventListener('click', openPw);
   $('pForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -221,7 +246,7 @@
     $('stats').title = [s.model, s.hostname, s.platform, `Node ${s.node}`].filter(Boolean).join(', ');
   }
 
-  const TYPE_LABEL = { static: 'HTML', node: 'Node.js', python: 'Python', react: 'React/Vue' };
+  const TYPE_LABEL = { static: 'HTML', node: 'Node.js', python: 'Python', react: 'React/Vue', php: 'PHP', deno: 'Deno', bun: 'Bun', binary: 'Binary', docker: 'Docker' };
   const BUSY = ['deploying', 'updating', 'restoring', 'restarting', 'stopping'];
   const STATUS_KEY = {
     running: 'statusRunning', stopped: 'statusStopped', crashed: 'statusCrashed', deploying: 'statusDeploying', updating: 'statusUpdating',
@@ -272,7 +297,7 @@
     const apps = state.apps.filter((a) => !q || a.name.toLowerCase().includes(q) || a.type.includes(q) || String(a.port).includes(q));
     $('cnt').textContent = state.apps.length ? String(state.apps.length) : '';
     if (!state.apps.length) {
-      list.innerHTML = `<div class="empty"><h3>${esc(t('noApps'))}</h3><p>${esc(t('noAppsDesc'))}</p><button class="btn primary" type="button" data-act="deploy-empty">${esc(t('deployApp'))}</button></div>`;
+      list.innerHTML = `<div class="empty"><h3>${esc(t('noApps'))}</h3><p>${esc(t('noAppsDesc'))}</p>${canOperate() ? `<button class="btn primary" type="button" data-act="deploy-empty">${esc(t('deployApp'))}</button>` : ''}</div>`;
       return;
     }
     list.innerHTML = apps.map((a) => {
@@ -280,30 +305,52 @@
       const on = a.status === 'running' || a.status === 'restarting';
       const dis = working ? ' disabled' : '';
       const id = esc(a.id);
+      const m = a.metrics || {};
+      const unhealthy = on && m.health && m.health.ok === false;
       const db = a.dbType !== 'none' && a.dbInfo ? `<span>${a.dbType === 'sqlite' ? 'SQLite' : 'PostgreSQL'}</span>` : '';
+      const src = a.source && a.source.type === 'git' ? `<span title="${esc(a.source.url || '')}">git ${esc(a.source.branch || '')}${a.source.commit ? ` ${esc(a.source.commit.slice(0, 7))}` : ''}</span>` : '';
       const extras = [
+        src,
         db,
         a.envKeys.length ? `<span>${esc(t('envCount', { n: a.envKeys.length }))}</span>` : '',
+        a.jobs ? `<span>${esc(t('jobCount', { n: a.jobs }))}</span>` : '',
         a.backupSchedule !== 'off' ? `<span>${esc(t(a.backupSchedule === 'daily' ? 'schedDaily' : 'schedWeekly'))}</span>` : '',
       ].join('');
       const err = a.lastError ? `<p class="app-err"><strong>${esc(t('lastError'))}</strong> ${esc(a.lastError.message)}</p>` : '';
-      const item = (act, label, cls = '') => `<button type="button" role="menuitem" class="${cls}" data-act="${act}" data-id="${id}"${working && act !== 'logs' ? ' disabled' : ''}>${esc(label)}</button>`;
-      return `<article class="app ${pinClass(a.status)}" role="listitem" data-id="${id}">
-        <div class="app-state"><i class="led"></i><span>${esc(t(STATUS_KEY[a.status] || 'statusStopped'))}</span></div>
+      const usage = on && (m.cpu != null || m.mem != null)
+        ? `<button type="button" class="usage" data-act="metrics" data-id="${id}" title="${esc(t('metricsTitle'))}">${m.cpu != null ? `<span>${esc(m.cpu.toFixed(m.cpu < 10 ? 1 : 0))}% CPU</span>` : ''}${m.mem != null ? `<span>${esc(fmtSize(m.mem))}</span>` : ''}</button>`
+        : '';
+      const link = (a.links && a.links[0]) || a.url;
+      const linkText = link.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      const item = (act, label, cls = '') => `<button type="button" role="menuitem" class="${cls}" data-act="${act}" data-id="${id}"${working && !['logs', 'metrics', 'releases', 'jobs'].includes(act) ? ' disabled' : ''}>${esc(label)}</button>`;
+      const op = canOperate();
+      const menu = [
+        op && on ? item('restart', t('restart')) : '',
+        op ? item('update', t('update')) : '',
+        op && a.source && a.source.type === 'git' ? item('pull', t('pullNow')) : '',
+        op ? item('releases', t('releasesTitle')) : '',
+        item('metrics', t('metricsTitle')),
+        op ? item('files', t('files')) : '',
+        op ? item('settings', t('settings')) : '',
+        op ? item('jobs', t('jobsTitle')) : '',
+        op ? item('backups', t('backups')) : '',
+        op && a.dbInfo ? item('db', t('database')) : '',
+        isAdmin() ? `<hr>${item('delete', t('delete'), 'danger')}` : '',
+      ].join('');
+      return `<article class="app ${pinClass(a.status)}${unhealthy ? ' unhealthy' : ''}" role="listitem" data-id="${id}">
+        <div class="app-state"><i class="led"></i><span>${esc(unhealthy ? t('notResponding') : t(STATUS_KEY[a.status] || 'statusStopped'))}</span>${usage}</div>
         <div class="app-main">
           <h3 class="app-name">${esc(a.name)}</h3>
           <p class="app-meta"><span>${esc(TYPE_LABEL[a.type] || a.type)}</span><span>v${esc(a.version || 1)}</span>${extras}</p>
           ${err}
         </div>
-        <div class="app-port"><span class="port-num">${esc(a.port)}</span><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(t('open'))}</a></div>
+        <div class="app-port"><span class="port-num">${esc(a.port)}</span><a href="${esc(link)}" target="_blank" rel="noopener" title="${esc(link)}">${esc(linkText.length > 28 ? t('open') : linkText)}</a></div>
         <div class="app-actions">
-          ${on ? `<button class="btn" type="button" data-act="stop" data-id="${id}"${dis}>${esc(t('stop'))}</button>` : `<button class="btn primary" type="button" data-act="start" data-id="${id}"${dis}>${esc(t('start'))}</button>`}
+          ${op ? (on ? `<button class="btn" type="button" data-act="stop" data-id="${id}"${dis}>${esc(t('stop'))}</button>` : `<button class="btn primary" type="button" data-act="start" data-id="${id}"${dis}>${esc(t('start'))}</button>`) : ''}
           <button class="btn" type="button" data-act="logs" data-id="${id}">${esc(t('logs'))}</button>
           <div class="menu">
             <button class="btn" type="button" data-menu aria-haspopup="menu" aria-expanded="false">${esc(t('more'))}</button>
-            <div class="menu-list" role="menu" hidden>
-              ${on ? item('restart', t('restart')) : ''}${item('update', t('update'))}${item('files', t('files'))}${item('settings', t('settings'))}${item('backups', t('backups'))}${a.dbInfo ? item('db', t('database')) : ''}<hr>${item('delete', t('delete'), 'danger')}
-            </div>
+            <div class="menu-list" role="menu" hidden>${menu}</div>
           </div>
         </div>
       </article>`;
@@ -339,7 +386,9 @@
     if (!a) return;
     const act = b.dataset.act;
     if (['start', 'stop', 'restart'].includes(act)) return power(a, act, b);
-    ({ update: openUpdate, files: openFiles, backups: openBackups, db: openDb, settings: openSettings, logs: openLogs, delete: openDelete })[act](a);
+    if (act === 'pull') return pull(a, b);
+    const fn = { update: openUpdate, files: openFiles, backups: openBackups, db: openDb, settings: openSettings, logs: openLogs, delete: openDelete, ...window.Pi.actions }[act];
+    if (fn) fn(a);
   });
 
   $('list').addEventListener('keydown', (e) => {
@@ -380,6 +429,15 @@
     $('dTypeHelp').innerHTML = t(`help_${$('dType').value}`);
   });
 
+  async function pull(a, b) {
+    try {
+      await busy(b, () => api('POST', `api/apps/${a.id}/pull`));
+      toast(t('pullStarted'));
+      refresh();
+      openLogs(a);
+    } catch (err) { toast(err.message, 'err'); }
+  }
+
   async function power(a, act, b) {
     try {
       await busy(b, () => api('POST', `api/apps/${a.id}/${act}`));
@@ -417,11 +475,50 @@
   wireDrop('dZone', 'dFile', 'dFn');
   wireDrop('uZone', 'uFile', 'uFn');
 
+  function setSource(src) {
+    state.src = src;
+    document.querySelectorAll('#dSrc [data-src]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.src === src)));
+    $('dUpload').hidden = src !== 'upload';
+    $('dGit').hidden = src !== 'git';
+    $('dTemplates').hidden = src !== 'template';
+    // A template brings its own type; name stays editable.
+    $('dType').closest('.fg').hidden = src === 'template';
+    if (src === 'template') renderTemplates();
+  }
+  document.querySelectorAll('#dSrc [data-src]').forEach((b) => b.addEventListener('click', () => setSource(b.dataset.src)));
+
+  async function renderTemplates() {
+    const el = $('dTemplates');
+    if (!state.templates.length) {
+      try { state.templates = await api('GET', 'api/templates'); } catch (err) { el.textContent = err.message; return; }
+    }
+    el.innerHTML = state.templates.map((tp) => {
+      const ok = state.runtimes[tp.type] !== false;
+      return `<label class="tpl${ok ? '' : ' off'}"><input type="radio" name="tpl" value="${esc(tp.id)}"${ok ? '' : ' disabled'}>
+        <strong>${esc(tp.name)}</strong><span class="tpl-type">${esc(TYPE_LABEL[tp.type] || tp.type)}${tp.db ? ' + SQLite' : ''}</span>
+        <span class="tpl-desc">${esc(ok ? tp.description : t('runtimeMissing', { type: TYPE_LABEL[tp.type] || tp.type }))}</span></label>`;
+    }).join('');
+  }
+  $('dTemplates').addEventListener('change', (e) => {
+    const tp = state.templates.find((x) => x.id === e.target.value);
+    if (tp && !$('dName').value.trim()) $('dName').value = tp.name;
+  });
+
+  function markRuntimes() {
+    for (const o of $('dType').options) {
+      const ok = state.runtimes[o.value] !== false;
+      o.disabled = !ok;
+      o.textContent = t(`type_${o.value}`) + (ok ? '' : ` (${t('notInstalled')})`);
+    }
+  }
+
   $('deployBtn').addEventListener('click', () => {
     $('dForm').reset();
     $('dFn').textContent = '';
     $('dPortInfo').textContent = '';
     $('dDbNameWrap').hidden = true;
+    markRuntimes();
+    setSource('upload');
     $('dTypeHelp').innerHTML = t(`help_${$('dType').value}`);
     const [lo, hi] = state.system ? state.system.portRange : [3001, 3200];
     $('dPort').min = lo; $('dPort').max = hi;
@@ -442,18 +539,28 @@
     e.preventDefault();
     const name = $('dName').value.trim();
     const f = $('dFile').files[0];
-    if (!name) return toast(t('enterName'), 'err');
-    if (!f) return toast(t('selectFileErr'), 'err');
+    const tpl = document.querySelector('#dTemplates input:checked');
+    if (!name && state.src !== 'template') return toast(t('enterName'), 'err');
+    if (state.src === 'upload' && !f) return toast(t('selectFileErr'), 'err');
+    if (state.src === 'git' && !$('dGitUrl').value.trim()) return toast(t('gitUrlMissing'), 'err');
+    if (state.src === 'template' && !tpl) return toast(t('chooseTemplate'), 'err');
     const fd = new FormData();
-    fd.append('name', name);
-    fd.append('type', $('dType').value);
-    fd.append('dbType', $('dDb').value);
+    if (name) fd.append('name', name);
+    if (state.src !== 'template') fd.append('type', $('dType').value);
+    if ($('dDb').value !== 'none' || state.src !== 'template') fd.append('dbType', $('dDb').value);
     if ($('dPort').value) fd.append('port', $('dPort').value);
     if ($('dDbName').value.trim()) fd.append('dbName', $('dDbName').value.trim());
-    fd.append('zipfile', f);
+    if (state.src === 'upload') fd.append('zipfile', f);
+    if (state.src === 'git') {
+      fd.append('gitUrl', $('dGitUrl').value.trim());
+      fd.append('gitBranch', $('dGitBranch').value.trim() || 'main');
+      if ($('dGitSubdir').value.trim()) fd.append('gitSubdir', $('dGitSubdir').value.trim());
+      if ($('dGitToken').value) fd.append('gitToken', $('dGitToken').value);
+    }
+    if (state.src === 'template') fd.append('template', tpl.value);
     try {
       const r = await busy($('dBtn'), () => api('POST', 'api/apps', fd, true));
-      toast(t('deployStarted', { name }));
+      toast(t('deployStarted', { name: r.name }));
       closeM('dMod');
       refresh();
       openLogs(r);
@@ -514,29 +621,67 @@
 
   // ---------- logs ----------
 
+  const MAX_LOG_CHARS = 400000;
+
+  function stopLogStream() {
+    if (state.logStream) state.logStream.close();
+    state.logStream = null;
+    $('lLive').classList.remove('on');
+  }
+
   function openLogs(a) {
     state.cur.logs = a.id;
     $('lName').textContent = a.name;
     $('lC').textContent = t('loading');
+    $('lSearch').value = '';
     openM('lMod');
-    loadLogs(true);
-    clearInterval(state.logTimer);
-    state.logTimer = setInterval(() => { if ($('lAuto').checked) loadLogs(false); }, 2500);
+    startLogStream();
   }
 
-  async function loadLogs(scroll) {
+  /** Live log through Server-Sent Events; the browser reconnects by itself. */
+  function startLogStream() {
+    stopLogStream();
     const el = $('lC');
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    el.textContent = '';
+    const es = new EventSource(`api/apps/${encodeURIComponent(state.cur.logs)}/logs/stream`);
+    state.logStream = es;
+    es.addEventListener('open', () => $('lLive').classList.add('on'));
+    es.addEventListener('error', () => $('lLive').classList.remove('on'));
+    es.addEventListener('reset', () => { el.textContent = ''; });
+    es.addEventListener('log', (ev) => {
+      if ($('lSearch').value.trim()) return; // showing search results
+      const { text } = JSON.parse(ev.data);
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      el.textContent = (el.textContent + text).slice(-MAX_LOG_CHARS);
+      if (!el.textContent) el.textContent = '';
+      if ($('lAuto').checked && atBottom) el.scrollTop = el.scrollHeight;
+    });
+  }
+
+  async function loadLogs() {
+    if ($('lSearch').value.trim()) return searchLogs();
+    startLogStream();
+  }
+
+  let searchTimer = null;
+  async function searchLogs() {
+    const q = $('lSearch').value.trim();
+    const el = $('lC');
+    if (!q) return startLogStream();
     try {
-      const r = await api('GET', `api/apps/${state.cur.logs}/logs`);
-      el.textContent = r.logs || t('noLogs');
-      if (scroll || atBottom) el.scrollTop = el.scrollHeight;
+      const r = await api('GET', `api/apps/${state.cur.logs}/logs/search?q=${encodeURIComponent(q)}`);
+      el.textContent = r.matches.length
+        ? `${t('searchResults', { n: r.total })}${r.truncated ? ` ${t('searchTruncated', { n: r.matches.length })}` : ''}\n\n${r.matches.map((m) => `${m.file === 'previous' ? '↶ ' : ''}${m.line}: ${m.text}`).join('\n')}`
+        : t('noMatches');
+      el.scrollTop = el.scrollHeight;
     } catch (err) { el.textContent = err.message; }
   }
+  $('lSearch').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(searchLogs, 300); });
+
   $('lRefresh').addEventListener('click', () => loadLogs(true));
   $('lClear').addEventListener('click', async () => {
     if (!confirm(t('clearLogsConfirm'))) return;
-    try { await api('DELETE', `api/apps/${state.cur.logs}/logs`); loadLogs(true); } catch (err) { toast(err.message, 'err'); }
+    try { await api('DELETE', `api/apps/${state.cur.logs}/logs`); $('lC').textContent = ''; } catch (err) { toast(err.message, 'err'); }
   });
 
   // ---------- backups ----------
@@ -555,15 +700,50 @@
       const r = await api('GET', `api/apps/${state.cur.backups}/backups`);
       $('bSched').value = r.schedule || 'off';
       if (!r.backups.length) { el.innerHTML = `<div class="placeholder">${esc(t('noBackups'))}</div>`; return; }
-      el.innerHTML = r.backups.map((b) => `<div class="bk-item">
-        <div><div class="bk-date">${esc(fmtDate(b.date))}</div><div class="bk-size">${fmtSize(b.size)}</div></div>
+      el.innerHTML = r.backups.map((b) => {
+        const v = b.verified;
+        const o = b.offsite;
+        const marks = [
+          v ? `<span class="tagline ${v.ok ? 'good' : 'bad'}" title="${esc(v.error || '')}">${esc(v.ok ? t('verified') : t('verifyFailed'))}</span>` : '',
+          o ? `<span class="tagline ${o.ok ? 'good' : 'bad'}" title="${esc(o.error || '')}">${esc(o.ok ? t(o.encrypted ? 'offsiteEncrypted' : 'offsiteOk') : t('offsiteFailed'))}</span>` : '',
+        ].join('');
+        return `<div class="bk-item">
+        <div><div class="bk-date">${esc(fmtDate(b.date))}</div><div class="bk-size">${fmtSize(b.size)} ${marks}</div></div>
         <div class="bk-acts">
+          <button class="btn btn-s" type="button" data-bk="verify" data-fn="${esc(b.filename)}">${esc(t('verify'))}</button>
           <a class="btn btn-s" href="api/apps/${encodeURIComponent(state.cur.backups)}/backups/${encodeURIComponent(b.filename)}/download" >${esc(t('download'))}</a>
           <button class="btn btn-s" type="button" data-bk="restore" data-fn="${esc(b.filename)}" >${esc(t('restore'))}</button>
           <button class="btn btn-s btn-d" type="button" data-bk="delete" data-fn="${esc(b.filename)}" >${esc(t('delete'))}</button>
-        </div></div>`).join('');
+        </div></div>`;
+      }).join('');
     } catch (err) { el.innerHTML = `<div class="placeholder">${esc(err.message)}</div>`; }
+    loadRemoteBackups();
   }
+
+  async function loadRemoteBackups() {
+    const el = $('bRemote');
+    try {
+      const list = await api('GET', `api/apps/${state.cur.backups}/backups-remote`);
+      $('bRemoteWrap').hidden = !list.length;
+      el.innerHTML = list.map((b) => `<div class="bk-item">
+        <div><div class="bk-date">${esc(fmtDate(b.date))}</div><div class="bk-size">${fmtSize(b.size)}${b.encrypted ? ` <span class="tagline">${esc(t('encrypted'))}</span>` : ''}</div></div>
+        <div class="bk-acts"><button class="btn btn-s" type="button" data-remote="${esc(b.name)}">${esc(t('restore'))}</button></div></div>`).join('');
+    } catch { $('bRemoteWrap').hidden = true; }
+  }
+
+  $('bRemote').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-remote]');
+    if (!b || !confirm(t('restoreConfirm'))) return;
+    const id = state.cur.backups;
+    try {
+      await busy(b, () => api('POST', `api/apps/${id}/backups-remote/${encodeURIComponent(b.dataset.remote)}/restore`));
+      toast(t('restoreStarted'));
+      closeM('bMod');
+      refresh();
+      const a = state.apps.find((x) => x.id === id);
+      if (a) openLogs(a);
+    } catch (err) { toast(err.message, 'err'); }
+  });
 
   $('bList').addEventListener('click', async (e) => {
     const b = e.target.closest('button[data-bk]');
@@ -571,6 +751,11 @@
     const id = state.cur.backups;
     const fn = b.dataset.fn;
     try {
+      if (b.dataset.bk === 'verify') {
+        const v = await busy(b, () => api('POST', `api/apps/${id}/backups/${fn}/verify`));
+        toast(v.ok ? t('verified') : `${t('verifyFailed')}: ${v.error}`, v.ok ? 'ok' : 'err');
+        return loadBackups();
+      }
       if (b.dataset.bk === 'restore') {
         if (!confirm(t('restoreConfirm'))) return;
         await api('POST', `api/apps/${id}/backups/${fn}/restore`);
@@ -593,6 +778,8 @@
       await busy($('bkBtn'), () => api('POST', `api/apps/${state.cur.backups}/backups`));
       toast(t('backupCreated'));
       loadBackups();
+      // Verification and the offsite copy finish shortly after.
+      setTimeout(() => { if ($('bMod').classList.contains('on')) loadBackups(); }, 4000);
     } catch (err) { toast(err.message, 'err'); }
   });
 
@@ -620,7 +807,52 @@
       rows.push(['DATABASE_URL', d.url]);
       $('dbInfo').innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd><code>${esc(v)}</code></dd>`).join('');
     } catch (err) { $('dbInfo').innerHTML = `<dt>${esc(err.message)}</dt><dd></dd>`; }
+    $('sqlOut').innerHTML = '';
+    $('sqlInfo').textContent = '';
+    $('sqlWrite').checked = false;
+    $('sqlWriteWrap').hidden = !isAdmin();
+    loadSqlTables(a);
   }
+
+  async function loadSqlTables(a) {
+    try {
+      const tables = await api('GET', `api/apps/${a.id}/sql/tables`);
+      $('sqlTables').innerHTML = tables.length
+        ? tables.map((x) => `<button type="button" class="chip" data-table="${esc(x.name)}">${esc(x.name)}</button>`).join('')
+        : `<span class="dim small">${esc(t('noTables'))}</span>`;
+    } catch (err) { $('sqlTables').innerHTML = `<span class="dim small">${esc(err.message)}</span>`; }
+  }
+
+  $('sqlTables').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-table]');
+    if (!b) return;
+    const q = /^[A-Za-z_][A-Za-z0-9_]*$/.test(b.dataset.table) ? b.dataset.table : `"${b.dataset.table.replace(/"/g, '""')}"`;
+    $('sqlText').value = `SELECT * FROM ${q} LIMIT 100`;
+    runSql();
+  });
+
+  async function runSql() {
+    const sql = $('sqlText').value.trim();
+    if (!sql) return;
+    const out = $('sqlOut');
+    try {
+      const r = await busy($('sqlRun'), () => api('POST', `api/apps/${state.cur.db}/sql`, { sql, write: $('sqlWrite').checked }));
+      $('sqlInfo').textContent = `${t('rowsCount', { n: r.rows.length })}${r.truncated ? ` (${t('truncated')})` : ''} · ${r.ms} ms`;
+      if ($('sqlWrite').checked) {
+        const a = state.apps.find((x) => x.id === state.cur.db);
+        if (a) loadSqlTables(a);
+      }
+      if (!r.columns.length) { out.innerHTML = `<p class="dim small">${esc(t('noRows'))}</p>`; return; }
+      out.innerHTML = `<table><thead><tr>${r.columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${
+        r.rows.map((row) => `<tr>${row.map((v) => `<td${v === null ? ' class="null"' : ''}>${esc(v === null ? 'NULL' : typeof v === 'object' ? JSON.stringify(v) : v)}</td>`).join('')}</tr>`).join('')
+      }</tbody></table>`;
+    } catch (err) {
+      $('sqlInfo').textContent = '';
+      out.innerHTML = `<p class="sql-err">${esc(err.message)}</p>`;
+    }
+  }
+  $('sqlRun').addEventListener('click', runSql);
+  $('sqlText').addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runSql(); } });
 
   $('dbForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -637,22 +869,46 @@
 
   // ---------- settings (env vars, start command) ----------
 
+  const SETTING_FIELDS = ['sEnv', 'sCmd', 'sMem', 'sCpu', 'sNice', 'sHealthOn', 'sHealthPath', 'sHealthRestart', 'sDomains', 'sGitBranch', 'sGitToken'];
+
   async function openSettings(a) {
     state.cur.settings = a.id;
     $('sName').textContent = a.name;
-    $('sEnv').value = '';
-    $('sCmd').value = '';
+    $('sForm').reset();
     // Keep the form read-only until the current values have arrived.
-    const lock = (on) => { $('sEnv').readOnly = on; $('sCmd').readOnly = on; $('sBtn').disabled = on; };
+    const lock = (on) => { SETTING_FIELDS.forEach((f) => { $(f).disabled = on; }); $('sBtn').disabled = on; };
     lock(true);
+    $('sGit').hidden = !(a.source && a.source.type === 'git');
+    $('sLinks').innerHTML = (a.links || []).map((l) => `<a href="${esc(l)}" target="_blank" rel="noopener">${esc(l)}</a>`).join('') || `<span class="dim small">${esc(t('noLinks'))}</span>`;
     openM('sMod');
     try {
       const s = await api('GET', `api/apps/${a.id}/settings`);
       $('sEnv').value = Object.entries(s.env).map(([k, v]) => `${k}=${v}`).join('\n');
       $('sCmd').value = s.startCommand || '';
+      $('sMem').value = s.limits.memoryMb || '';
+      $('sCpu').value = s.limits.cpuPercent || '';
+      $('sNice').value = s.limits.nice || '';
+      $('sHealthOn').checked = s.health.enabled !== false;
+      $('sHealthPath').value = s.health.path || '/';
+      $('sHealthRestart').checked = !!s.health.restart;
+      $('sDomains').value = (s.domains || []).join('\n');
+      if (!$('sGit').hidden) {
+        const src = await api('GET', `api/apps/${a.id}/source`);
+        $('sGitBranch').value = src.branch || 'main';
+        $('sGitToken').value = '';
+        $('sHookUrl').textContent = src.webhookUrl;
+        $('sHookSecret').textContent = src.webhookSecret;
+      }
       lock(false);
     } catch (err) { toast(err.message, 'err'); }
   }
+
+  document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText($(b.dataset.copy).textContent);
+      toast(t('copied'));
+    } catch { toast(t('copyFailed'), 'err'); }
+  }));
 
   function parseEnv(text) {
     const env = {};
@@ -672,7 +928,22 @@
     e.preventDefault();
     try {
       const env = parseEnv($('sEnv').value);
-      await busy($('sBtn'), () => api('PUT', `api/apps/${state.cur.settings}/settings`, { env, startCommand: $('sCmd').value }));
+      const id = state.cur.settings;
+      const body = {
+        env,
+        startCommand: $('sCmd').value,
+        limits: { memoryMb: $('sMem').value, cpuPercent: $('sCpu').value, nice: $('sNice').value },
+        health: { enabled: $('sHealthOn').checked, path: $('sHealthPath').value.trim() || '/', restart: $('sHealthRestart').checked },
+        domains: $('sDomains').value.split(/[\s,]+/).map((d) => d.trim()).filter(Boolean),
+      };
+      await busy($('sBtn'), async () => {
+        await api('PUT', `api/apps/${id}/settings`, body);
+        if (!$('sGit').hidden) {
+          const g = { gitBranch: $('sGitBranch').value.trim() };
+          if ($('sGitToken').value) g.gitToken = $('sGitToken').value;
+          await api('PUT', `api/apps/${id}/source`, g);
+        }
+      });
       toast(t('settingsSaved'));
       closeM('sMod');
       refresh();
@@ -895,6 +1166,11 @@
   });
 
   document.addEventListener('visibilitychange', () => { if (!document.hidden && !$('panel').hidden) refresh(); });
+
+  window.Pi = Object.assign(window.Pi || {}, {
+    api, t, esc, toast, busy, openM, closeM, fmtSize, fmtDate, refresh, state, $,
+    isAdmin, canOperate, openLogs, TYPE_LABEL, actions: window.Pi && window.Pi.actions ? window.Pi.actions : {},
+  });
 
   initTheme();
   initLangs();

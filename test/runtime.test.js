@@ -86,7 +86,7 @@ describe('monitoring, notifications and tasks', () => {
     p = await startPanel({ PIPAAS_PORT_RANGE: '39400-39430' });
     await p.login();
     const port = hook.address().port;
-    const r = await p.req('PUT', '/api/settings', { json: { notifications: { webhook: { enabled: true, url: `http://127.0.0.1:${port}/hook` }, ntfy: { enabled: true, url: `http://127.0.0.1:${port}/`, topic: 'pi' } } } });
+    const r = await p.req('PUT', '/api/settings', { json: { notifications: { webhook: { enabled: true, url: `http://127.0.0.1:${port}/hook` }, ntfy: { enabled: true, url: `http://127.0.0.1:${port}/`, topic: 'pi' }, push: { enabled: false } } } });
     assert.equal(r.status, 200, JSON.stringify(r.data));
   });
   after(async () => { await p.close(); hook.close(); });
