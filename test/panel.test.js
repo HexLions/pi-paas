@@ -146,6 +146,14 @@ describe('panel updates', () => {
     await waitFor(() => exited, { timeout: 4000 });
   });
 
+  it('tells container users to pull the image instead of updating in place', async () => {
+    const u = await make(await tmpDir());
+    u.cfg.containerMode = true;
+    await u.check();
+    assert.equal(u.mode(), 'image');
+    assert.throws(() => u.apply(), /pull the new image/);
+  });
+
   it('refuses to update a git checkout with local changes', async () => {
     const code = await tmpDir();
     execFileSync('git', ['init', '-q'], { cwd: code });

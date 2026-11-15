@@ -691,7 +691,7 @@
     const check = el('button', { class: 'btn', type: 'button' }, t('checkNow'));
     check.addEventListener('click', async () => { await busy(check, () => api('POST', 'api/panel/update/check')); showTab('update'); });
     row.append(check);
-    if (st.available) {
+    if (st.available && st.mode !== 'image') {
       const go = el('button', { class: 'btn primary', type: 'button' }, t('installUpdate', { v: st.latest.version }));
       go.addEventListener('click', async () => {
         if (!confirm(t('installConfirm', { v: st.latest.version }))) return;
@@ -702,7 +702,7 @@
     sec.append(row);
     const auto = field(sec, t('autoCheck'), el('input', { type: 'checkbox', checked: (await api('GET', 'api/settings')).updates.check }));
     auto.addEventListener('change', () => api('PUT', 'api/settings', { updates: { check: auto.checked } }).then(() => toast(t('saved'))).catch((err) => toast(err.message, 'err')));
-    sec.append(el('p', { class: 'help' }, t(st.mode === 'git' ? 'updateModeGit' : 'updateModeTarball')));
+    sec.append(el('p', { class: 'help' }, t({ git: 'updateModeGit', tarball: 'updateModeTarball', image: 'updateModeImage' }[st.mode])));
     if (st.latest && st.latest.notes) {
       const notes = section(body, t('releaseNotes', { v: st.latest.version }));
       notes.append(el('pre', { class: 'notes' }, st.latest.notes));

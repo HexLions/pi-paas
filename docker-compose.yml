@@ -1,10 +1,12 @@
 # Pi-PaaS, Docker Edition
-#   docker compose up -d        then open http://<host>:9000
-# The first password is printed in "docker compose logs" and saved in
+#   sudo mkdir -p /srv/pi-paas-data && docker compose up -d
+#   then open http://<host>:9000
+# The first password is printed in the container log and saved in
 # /srv/pi-paas-data/initial-password.txt.
 services:
   pi-paas:
-    build: .
+    image: ghcr.io/hexlions/pi-paas:latest
+    build: .                 # used only when the image cannot be pulled
     container_name: pi-paas
     restart: unless-stopped
     # Host networking: app ports, the built-in proxy (80/443) and .local names
@@ -17,5 +19,7 @@ services:
     environment:
       PIPAAS_RUNTIME: docker
       PIPAAS_DATA_DIR: /srv/pi-paas-data
+      PIPAAS_PORT: "9000"
       # PIPAAS_PASSWORD: choose-a-first-password
-      # PIPAAS_PROXY_PORT: "off"     # if something else already uses port 80
+      # PIPAAS_PROXY_PORT: "off"     # if another web server already uses port 80
+      # PIPAAS_HTTPS_PORT: "off"     # ... or port 443

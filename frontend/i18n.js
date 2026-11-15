@@ -5,6 +5,7 @@
   const LANGS = {
     en: {
       name: 'English', flag: '🇬🇧',
+      updateModeImage: "Pi-PaaS runs in a container: update by pulling the new image and recreating the container (docker compose pull && docker compose up -d, or \"Re-pull image\" in Portainer). Your data stays in its folder.",
       username: "User",
       totpCode: "Code from your authenticator app",
       seeUpdate: "See what is new",
@@ -300,6 +301,7 @@
     },
     it: {
       name: 'Italiano', flag: '🇮🇹',
+      updateModeImage: "Pi-PaaS gira in un container: si aggiorna scaricando la nuova immagine e ricreando il container (docker compose pull && docker compose up -d, oppure \"Re-pull image\" in Portainer). I dati restano nella loro cartella.",
       username: "Utente",
       totpCode: "Codice dell'app di autenticazione",
       seeUpdate: "Vedi le novità",
@@ -595,6 +597,7 @@
     },
     es: {
       name: 'Español', flag: '🇪🇸',
+      updateModeImage: "Pi-PaaS funciona en un contenedor: se actualiza descargando la nueva imagen y recreando el contenedor (docker compose pull && docker compose up -d, o \"Re-pull image\" en Portainer). Los datos se quedan en su carpeta.",
       username: "Usuario",
       totpCode: "Código de tu app de autenticación",
       seeUpdate: "Ver novedades",
@@ -890,6 +893,7 @@
     },
     fr: {
       name: 'Français', flag: '🇫🇷',
+      updateModeImage: "Pi-PaaS tourne dans un conteneur : mettez-le à jour en récupérant la nouvelle image et en recréant le conteneur (docker compose pull && docker compose up -d, ou « Re-pull image » dans Portainer). Les données restent dans leur dossier.",
       username: "Utilisateur",
       totpCode: "Code de votre application d'authentification",
       seeUpdate: "Voir les nouveautés",
@@ -1185,6 +1189,7 @@
     },
     de: {
       name: 'Deutsch', flag: '🇩🇪',
+      updateModeImage: "Pi-PaaS läuft in einem Container: aktualisiere, indem du das neue Image holst und den Container neu erstellst (docker compose pull && docker compose up -d, oder „Re-pull image\" in Portainer). Die Daten bleiben in ihrem Ordner.",
       username: "Benutzer",
       totpCode: "Code aus deiner Authenticator-App",
       seeUpdate: "Neuerungen ansehen",
@@ -1480,6 +1485,7 @@
     },
     ja: {
       name: '日本語', flag: '🇯🇵',
+      updateModeImage: "Pi-PaaS はコンテナで動作しています。新しいイメージを取得してコンテナを作り直して更新してください（docker compose pull && docker compose up -d、または Portainer の「Re-pull image」）。データはそのフォルダーに残ります。",
       username: "ユーザー",
       totpCode: "認証アプリのコード",
       seeUpdate: "新機能を見る",

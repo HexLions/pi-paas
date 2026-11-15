@@ -44,6 +44,8 @@ class Updater {
   }
 
   mode() {
+    // In a container the code belongs to the image: update by pulling a new one.
+    if (this.cfg.containerMode || fs.existsSync('/.dockerenv')) return 'image';
     return fs.existsSync(path.join(this.codeDir, '.git')) ? 'git' : 'tarball';
   }
 
@@ -108,6 +110,9 @@ class Updater {
     const st = this.status();
     if (!st.available) throw Object.assign(new Error('No newer version to install'), { status: 400 });
     if (this.state === 'updating' || this.state === 'restarting') throw Object.assign(new Error('An update is already running'), { status: 409 });
+    if (this.mode() === 'image') {
+      throw Object.assign(new Error('Pi-PaaS runs in a container: pull the new image and recreate the container (docker compose pull && docker compose up -d, or "Re-pull image" in Portainer)'), { status: 400 });
+    }
     this.state = 'updating';
     this.log2 = [];
     this.running = (this.mode() === 'git' ? this.applyGit(st.latest) : this.applyTarball(st.latest)).then(() => {
