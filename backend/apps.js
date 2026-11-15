@@ -25,6 +25,7 @@ class AppService {
     this.runAs = runAs;
     this.notifier = notifier;
     this.monitor = null; // set by server.js
+    this.proxy = null;
     this.jobs = null;
     this.tasks = new Map();
     this.running = new Set();
@@ -67,9 +68,22 @@ class AppService {
       health: { enabled: true, path: '/', restart: false, ...(app.health || {}) },
       source: app.source ? { type: app.source.type, url: app.source.url ? redactUrl(app.source.url) : undefined, branch: app.source.branch, template: app.source.template, commit: app.source.commit } : { type: 'upload' },
       domains: app.domains || [],
+      links: this.links(id, app),
       jobs: (app.jobs || []).length,
       ...(this.monitor ? { metrics: this.monitor.current(id) } : {}),
     };
+  }
+
+  /** Friendly addresses through the built-in proxy (<app>.local, domains). */
+  links(id, app) {
+    const px = this.proxy;
+    if (!px || !px.ports.http) return [];
+    return px.namesFor(id, app).map((n) => {
+      const secure = px.ports.https && px.certs.has(n);
+      const port = secure ? px.ports.https : px.ports.http;
+      const def = secure ? 443 : 80;
+      return `${secure ? 'https' : 'http'}://${n}${port === def ? '' : `:${port}`}/`;
+    });
   }
 
   list(host) {
@@ -446,7 +460,7 @@ class AppService {
 
   // ---------- settings ----------
 
-  async setSettings(id, { env, startCommand, limits, health }) {
+  async setSettings(id, { env, startCommand, limits, health, domains }) {
     const app = this.mustGet(id);
     this.assertIdle(id);
     const patch = {};
@@ -467,14 +481,31 @@ class AppService {
       patch.startCommand = startCommand.trim();
     }
     if (limits !== undefined) patch.limits = runtimes.validateLimits(limits);
+    if (domains !== undefined) patch.domains = this.validateDomains(id, domains);
     if (health !== undefined) {
       if (!health || typeof health !== 'object') throw new HttpError(400, 'Invalid health check');
       const p = health.path === undefined ? '/' : String(health.path);
       if (!/^\/[\x21-\x7e]{0,200}$/.test(p)) throw new HttpError(400, 'The health check path must start with / and contain no spaces');
       patch.health = { enabled: health.enabled !== false, path: p, restart: !!health.restart };
     }
+    // Only what the process sees needs a restart; domains and health checks do not.
+    const before = JSON.stringify([app.env, app.startCommand, app.limits]);
     this.registry.update(id, patch);
-    if (app.desired === 'running') await this.pm.restart(id);
+    const after = this.registry.get(id);
+    const changed = JSON.stringify([after.env, after.startCommand, after.limits]) !== before;
+    if (changed && app.desired === 'running') await this.pm.restart(id);
+  }
+
+  validateDomains(id, domains) {
+    const { validDomain } = require('./proxy');
+    if (!Array.isArray(domains) || domains.length > 10) throw new HttpError(400, 'Give at most 10 domains');
+    const clean = [...new Set(domains.map((d) => String(d).trim().toLowerCase()).filter(Boolean))];
+    for (const d of clean) {
+      if (!validDomain(d)) throw new HttpError(400, `"${d}" is not a valid domain name`);
+      const other = this.registry.all().find((a) => a.id !== id && (a.domains || []).includes(d));
+      if (other) throw new HttpError(409, `${d} is already used by "${other.name}"`);
+    }
+    return clean;
   }
 
   getEnv(id) {

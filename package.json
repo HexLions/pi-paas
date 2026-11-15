@@ -19,10 +19,12 @@
     "lint": "for f in backend/*.js frontend/*.js test/*.js; do node --check \"$f\" || exit 1; done && shellcheck install.sh"
   },
   "dependencies": {
+    "acme-client": "^5.4.0",
     "codemirror": "^5.65.18",
     "express": "^5.1.0",
     "fs-extra": "^11.4.1",
     "multer": "^2.0.2",
+    "multicast-dns": "^7.2.5",
     "node-cron": "^4.6.0",
     "yauzl": "^3.2.0"
   },

@@ -13,6 +13,8 @@ const { Settings } = require('./settings');
 const { Notifier } = require('./notifier');
 const { Monitor } = require('./monitor');
 const { Jobs } = require('./jobs');
+const { Proxy } = require('./proxy');
+const { Mdns } = require('./mdns');
 const { run } = require('./util');
 
 async function resolveRunAs(cfg, log) {
@@ -47,11 +49,14 @@ async function createPanel({ cfg = config.load(), log = console } = {}) {
   const service = new AppService(cfg, registry, pm, backups, { log, runAs, notifier });
   const monitor = new Monitor({ cfg, registry, pm, service, settings, notifier, log });
   const jobs = new Jobs({ cfg, registry, pm, notifier, runAs, log });
+  const proxy = new Proxy({ cfg, registry, pm, settings, log });
+  const mdns = new Mdns({ registry, settings, log });
+  service.proxy = proxy;
   service.monitor = monitor;
   backups.notifier = notifier;
   service.jobs = jobs;
   const ctx = {
-    cfg, registry, auth, pm, backups, service, settings, notifier, monitor, jobs, runAs, log,
+    cfg, registry, auth, pm, backups, service, settings, notifier, monitor, jobs, proxy, mdns, runAs, log,
     modules: [require('./routes/admin'), require('./routes/runtime'), require('./routes/deploy')],
   };
   ctx.app = createHttpApp(ctx);
@@ -60,7 +65,7 @@ async function createPanel({ cfg = config.load(), log = console } = {}) {
 
 async function main() {
   const panel = await createPanel();
-  const { cfg, service, backups, pm, app, monitor, jobs } = panel;
+  const { cfg, service, backups, pm, app, monitor, jobs, proxy, mdns } = panel;
   if (cfg.authDisabled) console.warn('[auth] PIPAAS_AUTH=off: the panel is open to anyone who can reach it');
 
   const server = app.listen(cfg.port, cfg.host, () => {
@@ -69,6 +74,18 @@ async function main() {
     backups.restoreSchedules();
     jobs.restoreAll();
     monitor.start();
+    proxy.start().catch((err) => console.warn(`[proxy] ${err.message}`));
+    mdns.start();
+    // Turning the proxy or .local names on/off, or a new domain, applies at once.
+    let last = JSON.stringify([panel.settings.get().proxy, panel.settings.get().mdns]);
+    panel.settings.onChange((s) => {
+      const now = JSON.stringify([s.proxy, s.mdns]);
+      if (now === last) return;
+      last = now;
+      mdns.stop();
+      mdns.start();
+      proxy.stop().then(() => proxy.start()).catch((err) => console.warn(`[proxy] ${err.message}`));
+    });
   });
   server.requestTimeout = 0; // large uploads on slow Wi-Fi
 
@@ -81,6 +98,8 @@ async function main() {
     backups.stopAll();
     jobs.stopAll();
     monitor.stop();
+    mdns.stop();
+    await proxy.stop();
     await pm.stopAll();
     process.exit(0);
   };

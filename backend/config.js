@@ -23,6 +23,15 @@ function portRange(raw) {
   return { start, end };
 }
 
+/** "off" disables, a number sets, empty takes the default (only as root). */
+function optPort(env, name, rootDefault) {
+  const raw = env[name];
+  if (raw === 'off') return null;
+  if (raw !== undefined && raw !== '') return int(env, name, null);
+  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+  return isRoot ? rootDefault : null;
+}
+
 function load(env = process.env) {
   const dataDir = path.resolve(env.PIPAAS_DATA_DIR || path.join(os.homedir(), 'pi-paas-data'));
   const range = portRange(env.PIPAAS_PORT_RANGE);
@@ -30,6 +39,8 @@ function load(env = process.env) {
     version: pkg.version,
     host: env.PIPAAS_HOST || '0.0.0.0',
     port: int(env, 'PIPAAS_PORT', 9000),
+    proxyPort: optPort(env, 'PIPAAS_PROXY_PORT', 80),
+    httpsPort: optPort(env, 'PIPAAS_HTTPS_PORT', 443),
     publicHost: env.PIPAAS_PUBLIC_HOST || '',
     dataDir,
     appsDir: path.join(dataDir, 'apps'),

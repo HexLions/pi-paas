@@ -219,12 +219,14 @@ function createHttpApp(ctx) {
     res.json({
       env: service.getEnv(req.params.id), startCommand: a.startCommand || '', limits: a.limits || {},
       health: { enabled: true, path: '/', restart: false, ...(a.health || {}) },
+      domains: a.domains || [],
     });
   });
 
   app.put('/api/apps/:id/settings', wrap(async (req, res) => {
-    const { env, startCommand, limits, health } = req.body || {};
-    await service.setSettings(req.params.id, { env, startCommand, limits, health });
+    const { env, startCommand, limits, health, domains } = req.body || {};
+    await service.setSettings(req.params.id, { env, startCommand, limits, health, domains });
+    if (domains !== undefined && ctx.proxy) ctx.proxy.ensureCerts().catch(() => {});
     res.json(service.view(req.params.id, req.hostname));
   }));
 

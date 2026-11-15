@@ -2,8 +2,12 @@
 // Runtimes, metrics, health, activity and scheduled tasks.
 const runtimes = require('../runtimes');
 
-function routes(app, { service, monitor, notifier, jobs, wrap }) {
+function routes(app, { service, monitor, notifier, jobs, proxy, wrap }) {
   app.get('/api/runtimes', (req, res) => res.json(runtimes.availableRuntimes()));
+
+  app.get('/api/proxy', (req, res) => res.json({
+    http: proxy.ports.http, https: proxy.ports.https, certificates: proxy.certStatus(),
+  }));
 
   app.get('/api/system/history', (req, res) => res.json(monitor.system));
 

@@ -88,6 +88,7 @@ async function startPanel(extraEnv = {}) {
     const s = panel.app.listen(0, '127.0.0.1', () => resolve(s));
   });
   const base = `http://127.0.0.1:${server.address().port}`;
+  panel.cfg.port = server.address().port; // the proxy sends the panel's names here
   let cookie = '';
 
   async function req(method, url, { json, form, headers = {}, raw = false } = {}) {
@@ -114,6 +115,8 @@ async function startPanel(extraEnv = {}) {
     await panel.service.settle();
     if (panel.jobs) panel.jobs.stopAll();
     if (panel.monitor) panel.monitor.stop();
+    if (panel.proxy) await panel.proxy.stop();
+    if (panel.mdns) panel.mdns.stop();
     await panel.pm.stopAll();
     panel.backups.stopAll();
     await new Promise((r) => server.close(r));
