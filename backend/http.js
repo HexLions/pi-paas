@@ -35,7 +35,11 @@ const ROLE_RULES = [
   [null, null, 'operator'],
 ];
 
-function requiredRole(method, p) {
+function requiredRole(method, rawPath) {
+  // Express would also route /api/USERS or /api/users/ to the same handler:
+  // compare the same normalized form it matches on, never the raw path.
+  const p = rawPath.toLowerCase().replace(/\/+$/, '');
+  if (method === 'HEAD') method = 'GET';
   for (const [m, re, role] of ROLE_RULES) {
     if ((m === null || m === method) && (re === null || re.test(p))) return role;
   }
@@ -47,7 +51,12 @@ function createHttpApp(ctx) {
   const modules = ctx.modules || [];
   const app = express();
   app.disable('x-powered-by');
-  if (cfg.trustProxy) app.set('trust proxy', 'loopback');
+  // Paths must match exactly as written, so the role rules see what the router sees.
+  app.set('case sensitive routing', true);
+  app.set('strict routing', true);
+  // The built-in proxy (and a local nginx) connect from loopback: trust their
+  // X-Forwarded-* so login limits and Secure cookies see the real client.
+  app.set('trust proxy', 'loopback');
 
   app.use((req, res, next) => {
     res.set({

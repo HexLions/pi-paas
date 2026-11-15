@@ -3,7 +3,7 @@
 // log, so a slow "npm install" on a Pi can be followed live from the panel.
 const fs = require('fs-extra');
 const path = require('path');
-const { run } = require('./util');
+const { run, safeResolve } = require('./util');
 const { baseEnv } = require('./processes');
 const runtimes = require('./runtimes');
 
@@ -44,7 +44,7 @@ async function buildApp(cfg, appDir, original, { runAs = null, onOutput, id = nu
   } else if (app.type === 'binary' && !app.startCommand) {
     const bin = runtimes.findBinary(appDir);
     if (!bin) throw new Error('No program found: name it app, server or main, or set a custom start command');
-    await fs.chmod(path.join(appDir, bin), 0o755);
+    await fs.chmod(safeResolve(appDir, bin), 0o755);
     say(`program: ./${bin}`);
   }
   for (const [cmd, args, extra = {}] of runtimes.extraBuildSteps(appDir, app, id)) {

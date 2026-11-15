@@ -10,7 +10,7 @@ const { isPortFree } = require('./processes');
 const database = require('./database');
 const runtimes = require('./runtimes');
 const {
-  APP_TYPES, DB_TYPES, SCHEDULES, HttpError, slugify, isValidId, isValidPgIdent, isValidEnvKey, run,
+  APP_TYPES, DB_TYPES, SCHEDULES, HttpError, slugify, isValidId, isValidPgIdent, isValidEnvKey, run, assertNoEscapingLinks, isPlainFile,
 } = require('./util');
 
 const RESERVED_ENV = new Set(['PORT', 'APP_PORT', 'PIPAAS_APP_ID', 'DATA_DIR', 'DATABASE_URL', 'SQLITE_PATH', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT']);
@@ -181,7 +181,8 @@ class AppService {
   async chownForApp(...dirs) {
     if (!this.runAs) return;
     for (const d of dirs) {
-      if (await fs.pathExists(d)) await run('chown', ['-R', `${this.runAs.uid}:${this.runAs.gid}`, d]);
+      // -h: change links themselves, never what they point at.
+      if (await fs.pathExists(d)) await run('chown', ['-R', '-h', `${this.runAs.uid}:${this.runAs.gid}`, d]);
     }
   }
 
@@ -229,7 +230,8 @@ class AppService {
       this.runTask(id, 'deploying', async () => {
         const dir = this.appDir(id);
         const vol = this.volumeDir(id);
-        const got = await sources.materialize(source, dir, { file, onOutput: this.logWriter(id) });
+        const got = await sources.materialize(source, dir, { file, onOutput: this.logWriter(id), runAs: this.runAs, homeDir: this.cfg.homeDir });
+        assertNoEscapingLinks(dir);
         if (got.commit) {
           this.pm.note(id, `Checked out ${got.commit.slice(0, 10)}${got.message ? `: ${got.message}` : ''}`);
           this.registry.update(id, { source: { ...source, commit: got.commit } });
@@ -316,14 +318,19 @@ class AppService {
         if (release) {
           await fs.move(release.dir, dir);
         } else {
-          got = await sources.materialize(source, dir, { file, onOutput: this.logWriter(id) });
+          got = await sources.materialize(source, dir, { file, onOutput: this.logWriter(id), runAs: this.runAs, homeDir: this.cfg.homeDir });
+          assertNoEscapingLinks(dir);
           if (got.commit) this.pm.note(id, `Checked out ${got.commit.slice(0, 10)}${got.message ? `: ${got.message}` : ''}`);
         }
         // v1.0 kept SQLite inside the app folder: carry it over.
         const db = app.dbInfo;
         if (db && db.type === 'sqlite' && db.path && db.path.startsWith(dir + path.sep)) {
           const prev = path.join(old, path.relative(dir, db.path));
-          if (await fs.pathExists(prev)) await fs.copy(prev, db.path);
+          // Never write through a link the new code may carry at that path.
+          if (isPlainFile(prev)) {
+            await fs.remove(db.path);
+            await fs.copy(prev, db.path);
+          }
         }
         await this.chownForApp(dir);
         // A release keeps its dependencies; only a Python venv must be rebuilt (it records absolute paths).
@@ -569,6 +576,9 @@ class AppService {
       try {
         await this.pm.stop(id);
         this.pm.note(id, `Restoring backup ${filename}`);
+        for (const part of ['files', 'volume']) {
+          if (await fs.pathExists(path.join(tmp, part))) assertNoEscapingLinks(path.join(tmp, part), 'The backup');
+        }
         if (await fs.pathExists(path.join(tmp, 'files'))) {
           await fs.remove(old);
           if (await fs.pathExists(dir)) await fs.move(dir, old);

@@ -43,8 +43,19 @@ function vapidHeader(endpoint, keys, subject) {
   return `vapid t=${head}.${claims}.${b64u(sig)}, k=${keys.publicKey}`;
 }
 
+/** Push services of the browsers people use; anything else could aim the panel at internal hosts. */
+const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^updates\.push\.services\.mozilla\.com$/, /^[a-z0-9-]+\.push\.apple\.com$/, /^web\.push\.apple\.com$/, /\.notify\.windows\.com$/];
+
+function pushHostAllowed(endpoint) {
+  try {
+    const u = new URL(endpoint);
+    return u.protocol === 'https:' && PUSH_HOSTS.some((re) => re.test(u.hostname));
+  } catch { return false; }
+}
+
 function validSubscription(sub) {
   return sub && typeof sub.endpoint === 'string' && /^https:\/\/[^\s]+$/.test(sub.endpoint) && sub.endpoint.length < 1000
+    && (process.env.PIPAAS_PUSH_ANY_HOST === '1' || pushHostAllowed(sub.endpoint))
     && sub.keys && typeof sub.keys.p256dh === 'string' && typeof sub.keys.auth === 'string'
     && fromB64u(sub.keys.p256dh).length === 65 && fromB64u(sub.keys.auth).length === 16;
 }
@@ -81,12 +92,14 @@ class Push {
     if (!validSubscription(sub)) throw Object.assign(new Error('Invalid push subscription'), { status: 400 });
     this.state.subscriptions = this.state.subscriptions.filter((s) => s.endpoint !== sub.endpoint);
     this.state.subscriptions.push({ endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }, user, createdAt: new Date().toISOString() });
-    if (this.state.subscriptions.length > 50) this.state.subscriptions.shift();
+    // At most 10 devices per user: one user cannot push everyone else out.
+    const mine = this.state.subscriptions.filter((s) => s.user === user);
+    if (mine.length > 10) this.state.subscriptions = this.state.subscriptions.filter((s) => s !== mine[0]);
     this.save();
   }
 
-  unsubscribe(endpoint) {
-    this.state.subscriptions = this.state.subscriptions.filter((s) => s.endpoint !== endpoint);
+  unsubscribe(endpoint, user) {
+    this.state.subscriptions = this.state.subscriptions.filter((s) => !(s.endpoint === endpoint && s.user === user));
     this.save();
   }
 
@@ -95,12 +108,13 @@ class Push {
   }
 
   /** Send to every subscribed browser; drops subscriptions the push service says are gone. */
-  async send(title, body, data = {}) {
-    if (!this.state.subscriptions.length) throw new Error('No browser has turned on notifications yet');
+  async send(title, body, data = {}, { user = null } = {}) {
+    const targets = this.state.subscriptions.filter((s) => !user || s.user === user);
+    if (!targets.length) throw new Error(user ? 'This user has not turned on notifications on any device' : 'No browser has turned on notifications yet');
     const payload = JSON.stringify({ title, body, app: data.app || null, level: data.level || 'info' });
     const subject = process.env.PIPAAS_PUSH_SUBJECT || 'mailto:admin@pi-paas.invalid';
     const gone = [];
-    const results = await Promise.all(this.state.subscriptions.map(async (s) => {
+    const results = await Promise.all(targets.map(async (s) => {
       try {
         const res = await fetch(s.endpoint, {
           method: 'POST',
@@ -128,4 +142,4 @@ class Push {
   }
 }
 
-module.exports = { Push, encrypt, vapidHeader, validSubscription };
+module.exports = { Push, encrypt, vapidHeader, validSubscription, pushHostAllowed };

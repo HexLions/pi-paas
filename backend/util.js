@@ -103,6 +103,41 @@ function commandExists(cmd) {
   });
 }
 
+/**
+ * Symbolic links under dir that point outside it (or anywhere absolute).
+ * Code from git or a backup may carry them; the panel runs as root and must
+ * never chmod, chown or write through them.
+ */
+function escapingLinks(dir, max = 5) {
+  const root = path.resolve(dir);
+  const found = [];
+  const walk = (d) => {
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (found.length >= max) return;
+      const full = path.join(d, e.name);
+      if (e.isSymbolicLink()) {
+        const target = fs.readlinkSync(full);
+        const resolved = path.resolve(path.dirname(full), target);
+        if (path.isAbsolute(target) || (resolved !== root && !resolved.startsWith(root + path.sep))) found.push(path.relative(root, full));
+      } else if (e.isDirectory()) walk(full);
+    }
+  };
+  walk(root);
+  return found;
+}
+
+function assertNoEscapingLinks(dir, what = 'The code') {
+  const bad = escapingLinks(dir);
+  if (bad.length) throw new HttpError(400, `${what} contains symbolic links that point outside the app: ${bad.join(', ')}`);
+}
+
+/** True when p exists and is a regular file (not a symlink). */
+function isPlainFile(p) {
+  try { return fs.lstatSync(p).isFile(); } catch { return false; }
+}
+
 /** Read at most maxBytes from the end of a file. */
 async function tailFile(file, maxBytes) {
   const fh = await fs.promises.open(file, 'r');
@@ -140,6 +175,9 @@ module.exports = {
   isValidPgIdent,
   isValidEnvKey,
   safeResolve,
+  escapingLinks,
+  assertNoEscapingLinks,
+  isPlainFile,
   run,
   commandExists,
   tailFile,
