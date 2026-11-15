@@ -36,6 +36,8 @@
 - `GET /api/summary` for dashboards; a HexDeck widget uses it.
 - Docker Edition: the same code in container mode (`PIPAAS_RUNTIME=docker`), with a Dockerfile generated for each app type when the project has none; `docker compose up -d` starts it.
 - The installer sets up git, copies the templates and the CLI, and restarts the panel through supervise-daemon on OpenRC.
+- A ready-made image, `ghcr.io/hexlions/pi-paas`, for amd64, arm64 and armv7, built by CI on every push to main and every release; the README explains how to run it as a Portainer stack.
+- In the Docker Edition the panel says to pull the new image instead of updating itself in place.
 
 ## v1.1.0 (2026-11-14)
 
