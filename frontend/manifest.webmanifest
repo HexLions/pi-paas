@@ -1,0 +1,16 @@
+{
+  "name": "Pi-PaaS",
+  "short_name": "Pi-PaaS",
+  "description": "Deploy and manage web apps on your Raspberry Pi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#e6ece6",
+  "theme_color": "#b02a55",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

@@ -15,6 +15,8 @@ const { Monitor } = require('./monitor');
 const { Jobs } = require('./jobs');
 const { Proxy } = require('./proxy');
 const { Mdns } = require('./mdns');
+const { Push } = require('./push');
+const { Updater } = require('./updater');
 const { run } = require('./util');
 
 async function resolveRunAs(cfg, log) {
@@ -43,7 +45,9 @@ async function createPanel({ cfg = config.load(), log = console } = {}) {
   const auth = new Auth(cfg, log);
   if (!cfg.authDisabled) auth.init();
   const settings = new Settings(cfg.settingsFile).load();
-  const notifier = new Notifier(settings, { log });
+  const push = new Push(cfg, log).load();
+  const notifier = new Notifier(settings, { log, push });
+  const updater = new Updater({ cfg, settings, notifier, log });
   const pm = new ProcessManager(cfg, registry, { log, runAs, notifier });
   const backups = new Backups(cfg, registry, log);
   const service = new AppService(cfg, registry, pm, backups, { log, runAs, notifier });
@@ -57,8 +61,8 @@ async function createPanel({ cfg = config.load(), log = console } = {}) {
   backups.settings = settings;
   service.jobs = jobs;
   const ctx = {
-    cfg, registry, auth, pm, backups, service, settings, notifier, monitor, jobs, proxy, mdns, runAs, log,
-    modules: [require('./routes/admin'), require('./routes/runtime'), require('./routes/deploy'), require('./routes/data')],
+    cfg, registry, auth, pm, backups, service, settings, notifier, monitor, jobs, proxy, mdns, push, updater, runAs, log,
+    modules: [require('./routes/admin'), require('./routes/runtime'), require('./routes/deploy'), require('./routes/data'), require('./routes/panel')],
   };
   ctx.app = createHttpApp(ctx);
   return ctx;
@@ -66,7 +70,7 @@ async function createPanel({ cfg = config.load(), log = console } = {}) {
 
 async function main() {
   const panel = await createPanel();
-  const { cfg, service, backups, pm, app, monitor, jobs, proxy, mdns } = panel;
+  const { cfg, service, backups, pm, app, monitor, jobs, proxy, mdns, updater } = panel;
   if (cfg.authDisabled) console.warn('[auth] PIPAAS_AUTH=off: the panel is open to anyone who can reach it');
 
   const server = app.listen(cfg.port, cfg.host, () => {
@@ -77,6 +81,7 @@ async function main() {
     monitor.start();
     proxy.start().catch((err) => console.warn(`[proxy] ${err.message}`));
     mdns.start();
+    updater.start();
     // Turning the proxy or .local names on/off, or a new domain, applies at once.
     let last = JSON.stringify([panel.settings.get().proxy, panel.settings.get().mdns]);
     panel.settings.onChange((s) => {
@@ -100,6 +105,7 @@ async function main() {
     jobs.stopAll();
     monitor.stop();
     mdns.stop();
+    updater.stop();
     await proxy.stop();
     await pm.stopAll();
     process.exit(0);

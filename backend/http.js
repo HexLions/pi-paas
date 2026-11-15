@@ -25,6 +25,7 @@ function wrap(fn) {
 const ROLE_RULES = [
   [null, /^\/api\/auth\//, 'viewer'],
   [null, /^\/api\/tokens(\/|$)/, 'viewer'],
+  [null, /^\/api\/push\//, 'viewer'],
   [null, /^\/api\/(users|settings|panel)(\/|$)/, 'admin'],
   ['DELETE', /^\/api\/apps\/[^/]+$/, 'admin'],
   ['GET', /^\/api\/apps\/[^/]+\/(settings|db|files|upload|jobs|sql|source|backups-remote)(\/|$)/, 'operator'],
@@ -53,7 +54,7 @@ function createHttpApp(ctx) {
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'same-origin',
-      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     });
     next();
   });

@@ -53,6 +53,7 @@ function load(env = process.env) {
     registryFile: path.join(dataDir, 'registry.json'),
     authFile: path.join(dataDir, 'auth.json'),
     settingsFile: path.join(dataDir, 'settings.json'),
+    pushFile: path.join(dataDir, 'push.json'),
     initialPasswordFile: path.join(dataDir, 'initial-password.txt'),
     portStart: range.start,
     portEnd: range.end,
