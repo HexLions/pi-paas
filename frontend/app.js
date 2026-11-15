@@ -59,7 +59,7 @@
     const el = document.createElement('div');
     el.className = `toast ${type}`;
     el.setAttribute('role', type === 'err' ? 'alert' : 'status');
-    el.textContent = `${type === 'ok' ? '✓' : '✕'} ${msg}`;
+    el.textContent = msg;
     $('toasts').appendChild(el);
     setTimeout(() => el.remove(), type === 'err' ? 7000 : 4000);
   }
@@ -188,8 +188,14 @@
       const [apps, system] = await Promise.all([api('GET', 'api/apps'), api('GET', 'api/system').catch(() => null)]);
       state.apps = apps;
       state.system = system;
+      // Probing ports for other processes binds every port in the range: keep it rare.
+      if (!state.portsAt || Date.now() - state.portsAt > 60000) {
+        state.portsAt = Date.now();
+        api('GET', 'api/ports').then((p) => { state.ports = p; renderPins(); }).catch(() => {});
+      }
       renderApps();
       renderStats();
+      renderPins();
     } catch (e) {
       if ($('panel').hidden) return;
       console.error(e);
@@ -202,70 +208,176 @@
   function renderStats() {
     const s = state.system;
     if (!s) { $('stats').innerHTML = ''; return; }
+    const item = (label, value, title, cls = '') => `<div class="stat ${cls}" title="${esc(title)}"><dt>${esc(label)}</dt><dd>${value}</dd></div>`;
     const parts = [];
     if (s.temperature != null) {
       const cls = s.temperature >= 75 ? 'burn' : s.temperature >= 65 ? 'hot' : '';
-      parts.push(`<span class="${cls}" title="${esc(t('cpuTemp'))}">🌡 <b>${s.temperature.toFixed(1)}°C</b></span>`);
+      parts.push(item(t('sTemp'), `${s.temperature.toFixed(0)}&nbsp;°C`, t('cpuTemp'), cls));
     }
-    parts.push(`<span title="${esc(t('load'))}">⚙ <b>${s.load[0].toFixed(2)}</b>/${s.cpus}</span>`);
-    const usedMem = s.memory.total - s.memory.free;
-    parts.push(`<span title="${esc(t('memory'))}">▦ <b>${fmtSize(usedMem)}</b>/${fmtSize(s.memory.total)}</span>`);
-    if (s.disk) parts.push(`<span title="${esc(t('diskFree'))}">⛁ <b>${fmtSize(s.disk.free)}</b> ${esc(t('free'))}</span>`);
+    parts.push(item(t('sLoad'), `${s.load[0].toFixed(2)}<small>/${s.cpus}</small>`, t('load')));
+    parts.push(item(t('sMem'), `${fmtSize(s.memory.total - s.memory.free)}<small>/${fmtSize(s.memory.total)}</small>`, t('memory')));
+    if (s.disk) parts.push(item(t('sDisk'), fmtSize(s.disk.free), t('diskFree')));
     $('stats').innerHTML = parts.join('');
-    $('stats').title = [s.model, s.hostname, s.platform, `Node ${s.node}`].filter(Boolean).join(' · ');
+    $('stats').title = [s.model, s.hostname, s.platform, `Node ${s.node}`].filter(Boolean).join(', ');
   }
 
   const TYPE_LABEL = { static: 'HTML', node: 'Node.js', python: 'Python', react: 'React/Vue' };
+  const BUSY = ['deploying', 'updating', 'restoring', 'restarting', 'stopping'];
+  const STATUS_KEY = {
+    running: 'statusRunning', stopped: 'statusStopped', crashed: 'statusCrashed', deploying: 'statusDeploying', updating: 'statusUpdating',
+    restoring: 'statusRestoring', restarting: 'statusRestarting', stopping: 'statusStopping',
+  };
+  const pinClass = (status) => (BUSY.includes(status) ? 's-busy' : `s-${status in STATUS_KEY ? status : 'stopped'}`);
 
-  function statusBadge(a) {
-    const map = {
-      running: ['on', 'statusRunning'], stopped: ['off', 'statusStopped'], crashed: ['bad', 'statusCrashed'],
-      deploying: ['busy', 'statusDeploying'], updating: ['busy', 'statusUpdating'], restoring: ['busy', 'statusRestoring'],
-      restarting: ['busy', 'statusRestarting'], stopping: ['busy', 'statusStopping'],
-    };
-    const [cls, key] = map[a.status] || ['off', 'statusStopped'];
-    return `<span class="badge ${cls}"><span class="dot"></span>${esc(t(key))}</span>`;
+  /** The port range drawn as a pin header: one pin per port, lit by the app on it. */
+  function renderPins() {
+    const el = $('pins');
+    if (!el) return;
+    const [lo, hi] = state.system ? state.system.portRange : [3001, 3200];
+    const byPort = new Map(state.apps.map((a) => [a.port, a]));
+    const other = new Set((state.ports || []).filter((p) => p.usedBy === 'system').map((p) => p.port));
+    const cols = Math.min(50, Math.ceil((hi - lo + 1) / 4));
+    el.style.setProperty('--cols', cols);
+    let html = '';
+    for (let p = lo; p <= hi; p++) {
+      const a = byPort.get(p);
+      if (a) {
+        html += `<button type="button" role="listitem" class="pin ${pinClass(a.status)}" data-goto="${esc(a.id)}" title="${p}: ${esc(a.name)} (${esc(t(STATUS_KEY[a.status] || 'statusStopped'))})" aria-label="${p}: ${esc(a.name)}"></button>`;
+      } else if (other.has(p)) {
+        html += `<i role="listitem" class="pin s-system" title="${p}: ${esc(t('portOther'))}"></i>`;
+      } else {
+        html += `<i role="listitem" class="pin" title="${p}"></i>`;
+      }
+    }
+    el.innerHTML = html;
+    const used = state.apps.length + other.size;
+    $('pinsSum').textContent = t('portsInUse', { used, total: hi - lo + 1, lo, hi });
   }
+
+  $('pins').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-goto]');
+    if (!b) return;
+    const row = document.querySelector(`.app[data-id="${CSS.escape(b.dataset.goto)}"]`);
+    if (!row) return;
+    $('filter').value = '';
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.classList.add('flash');
+    setTimeout(() => row.classList.remove('flash'), 1200);
+  });
 
   function renderApps() {
     const list = $('list');
     if (!list) return;
     const q = $('filter').value.trim().toLowerCase();
     const apps = state.apps.filter((a) => !q || a.name.toLowerCase().includes(q) || a.type.includes(q) || String(a.port).includes(q));
-    $('cnt').textContent = `(${state.apps.length})`;
+    $('cnt').textContent = state.apps.length ? String(state.apps.length) : '';
     if (!state.apps.length) {
-      list.innerHTML = `<div class="empty"><div class="empty-i">📦</div><h3>${esc(t('noApps'))}</h3><p>${esc(t('noAppsDesc'))}</p></div>`;
+      list.innerHTML = `<div class="empty"><h3>${esc(t('noApps'))}</h3><p>${esc(t('noAppsDesc'))}</p><button class="btn primary" type="button" data-act="deploy-empty">${esc(t('deployApp'))}</button></div>`;
       return;
     }
     list.innerHTML = apps.map((a) => {
-      const on = a.status === 'running';
       const working = !!a.task;
-      const db = a.dbType !== 'none' && a.dbInfo ? `<span class="tag">${a.dbType === 'sqlite' ? 'SQLite' : 'PostgreSQL'}: ${esc(a.dbInfo.name)}</span>` : '';
-      const err = a.lastError ? `<div class="card-err">${esc(t('lastError'))} (${esc(a.lastError.task)}): ${esc(a.lastError.message)}</div>` : '';
-      const btn = (act, label, extra = '') => `<button class="btn btn-s ${extra}" type="button" data-act="${act}" data-id="${esc(a.id)}"${working && act !== 'logs' ? ' disabled' : ''}>${label}</button>`;
-      const power = on || a.status === 'restarting'
-        ? btn('stop', `⏹ ${esc(t('stop'))}`) + btn('restart', '🔄', '')
-        : btn('start', `▶ ${esc(t('start'))}`);
-      return `<article class="card st-${esc(a.status)}${a.lastError ? ' has-error' : ''}">
-        <div class="card-h"><div><div class="card-name">${esc(a.name)}</div><div class="card-ver">v${esc(a.version || 1)} · ${esc(t('port'))} ${esc(a.port)}</div></div>${statusBadge(a)}</div>
-        <div class="meta"><span class="tag ${esc(a.type)}">${esc(TYPE_LABEL[a.type] || a.type)}</span>${db}${a.envKeys.length ? `<span class="tag">env: ${a.envKeys.length}</span>` : ''}${a.backupSchedule !== 'off' ? `<span class="tag">💾 ${esc(t(a.backupSchedule === 'daily' ? 'schedDaily' : 'schedWeekly'))}</span>` : ''}</div>
-        <a class="card-url" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.url)}</a>
-        ${err}
-        <div class="acts">${power}${btn('update', `📦 ${esc(t('update'))}`)}${btn('files', `📂 ${esc(t('files'))}`)}${btn('backups', `💾 ${esc(t('backups'))}`)}${a.dbInfo ? btn('db', '🗃️ DB') : ''}${btn('settings', `⚙ ${esc(t('settings'))}`)}${btn('logs', `📋 ${esc(t('logs'))}`)}${btn('delete', '🗑', 'btn-d')}</div>
+      const on = a.status === 'running' || a.status === 'restarting';
+      const dis = working ? ' disabled' : '';
+      const id = esc(a.id);
+      const db = a.dbType !== 'none' && a.dbInfo ? `<span>${a.dbType === 'sqlite' ? 'SQLite' : 'PostgreSQL'}</span>` : '';
+      const extras = [
+        db,
+        a.envKeys.length ? `<span>${esc(t('envCount', { n: a.envKeys.length }))}</span>` : '',
+        a.backupSchedule !== 'off' ? `<span>${esc(t(a.backupSchedule === 'daily' ? 'schedDaily' : 'schedWeekly'))}</span>` : '',
+      ].join('');
+      const err = a.lastError ? `<p class="app-err"><strong>${esc(t('lastError'))}</strong> ${esc(a.lastError.message)}</p>` : '';
+      const item = (act, label, cls = '') => `<button type="button" role="menuitem" class="${cls}" data-act="${act}" data-id="${id}"${working && act !== 'logs' ? ' disabled' : ''}>${esc(label)}</button>`;
+      return `<article class="app ${pinClass(a.status)}" role="listitem" data-id="${id}">
+        <div class="app-state"><i class="led"></i><span>${esc(t(STATUS_KEY[a.status] || 'statusStopped'))}</span></div>
+        <div class="app-main">
+          <h3 class="app-name">${esc(a.name)}</h3>
+          <p class="app-meta"><span>${esc(TYPE_LABEL[a.type] || a.type)}</span><span>v${esc(a.version || 1)}</span>${extras}</p>
+          ${err}
+        </div>
+        <div class="app-port"><span class="port-num">${esc(a.port)}</span><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(t('open'))}</a></div>
+        <div class="app-actions">
+          ${on ? `<button class="btn" type="button" data-act="stop" data-id="${id}"${dis}>${esc(t('stop'))}</button>` : `<button class="btn primary" type="button" data-act="start" data-id="${id}"${dis}>${esc(t('start'))}</button>`}
+          <button class="btn" type="button" data-act="logs" data-id="${id}">${esc(t('logs'))}</button>
+          <div class="menu">
+            <button class="btn" type="button" data-menu aria-haspopup="menu" aria-expanded="false">${esc(t('more'))}</button>
+            <div class="menu-list" role="menu" hidden>
+              ${on ? item('restart', t('restart')) : ''}${item('update', t('update'))}${item('files', t('files'))}${item('settings', t('settings'))}${item('backups', t('backups'))}${a.dbInfo ? item('db', t('database')) : ''}<hr>${item('delete', t('delete'), 'danger')}
+            </div>
+          </div>
+        </div>
       </article>`;
     }).join('') || `<div class="empty"><p>${esc(t('noMatch'))}</p></div>`;
   }
 
   $('filter').addEventListener('input', renderApps);
 
+  function closeMenus(except) {
+    document.querySelectorAll('.menu-list:not([hidden])').forEach((m) => {
+      if (m === except) return;
+      m.hidden = true;
+      m.previousElementSibling.setAttribute('aria-expanded', 'false');
+    });
+  }
+  document.addEventListener('click', (e) => { if (!e.target.closest('.menu')) closeMenus(); });
+
   $('list').addEventListener('click', (e) => {
+    const toggle = e.target.closest('[data-menu]');
+    if (toggle) {
+      const m = toggle.nextElementSibling;
+      closeMenus(m);
+      m.hidden = !m.hidden;
+      toggle.setAttribute('aria-expanded', String(!m.hidden));
+      if (!m.hidden) m.querySelector('button:not([disabled])')?.focus();
+      return;
+    }
     const b = e.target.closest('button[data-act]');
     if (!b) return;
+    if (b.dataset.act === 'deploy-empty') return $('deployBtn').click();
+    closeMenus();
     const a = state.apps.find((x) => x.id === b.dataset.id);
     if (!a) return;
     const act = b.dataset.act;
     if (['start', 'stop', 'restart'].includes(act)) return power(a, act, b);
     ({ update: openUpdate, files: openFiles, backups: openBackups, db: openDb, settings: openSettings, logs: openLogs, delete: openDelete })[act](a);
+  });
+
+  $('list').addEventListener('keydown', (e) => {
+    const m = e.target.closest('.menu-list');
+    if (!m) return;
+    const items = [...m.querySelectorAll('button:not([disabled])')];
+    const i = items.indexOf(e.target);
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    if (e.key === 'Escape') { e.stopPropagation(); closeMenus(); m.previousElementSibling.focus(); }
+  });
+
+  // Drop a .zip or .html anywhere on the panel to start a deploy with it.
+  let dragDepth = 0;
+  const hasFiles = (e) => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  window.addEventListener('dragenter', (e) => {
+    if ($('panel').hidden || document.querySelector('.ov.on') || !hasFiles(e)) return;
+    dragDepth += 1;
+    $('dropzone').hidden = false;
+  });
+  window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('dropzone').hidden = true; });
+  window.addEventListener('dragover', (e) => { if (!$('dropzone').hidden) e.preventDefault(); });
+  window.addEventListener('drop', (e) => {
+    if ($('dropzone').hidden) return;
+    e.preventDefault();
+    dragDepth = 0;
+    $('dropzone').hidden = true;
+    const f = e.dataTransfer.files[0];
+    if (!f) return;
+    if (!/\.(zip|html?)$/i.test(f.name)) return toast(t('selectFileErr'), 'err');
+    $('deployBtn').click();
+    const dt = new DataTransfer();
+    dt.items.add(f);
+    $('dFile').files = dt.files;
+    $('dFn').textContent = f.name;
+    $('dName').value = f.name.replace(/\.(zip|html?)$/i, '').replace(/[-_.]+/g, ' ').trim();
+    if (/\.html?$/i.test(f.name)) $('dType').value = 'static';
+    $('dTypeHelp').innerHTML = t(`help_${$('dType').value}`);
   });
 
   async function power(a, act, b) {
@@ -446,9 +558,9 @@
       el.innerHTML = r.backups.map((b) => `<div class="bk-item">
         <div><div class="bk-date">${esc(fmtDate(b.date))}</div><div class="bk-size">${fmtSize(b.size)}</div></div>
         <div class="bk-acts">
-          <a class="btn btn-s" href="api/apps/${encodeURIComponent(state.cur.backups)}/backups/${encodeURIComponent(b.filename)}/download" title="${esc(t('download'))}" aria-label="${esc(t('download'))}">⬇</a>
-          <button class="btn btn-s" type="button" data-bk="restore" data-fn="${esc(b.filename)}" title="${esc(t('restore'))}" aria-label="${esc(t('restore'))}">♻️</button>
-          <button class="btn btn-s btn-d" type="button" data-bk="delete" data-fn="${esc(b.filename)}" title="${esc(t('delete'))}" aria-label="${esc(t('delete'))}">🗑</button>
+          <a class="btn btn-s" href="api/apps/${encodeURIComponent(state.cur.backups)}/backups/${encodeURIComponent(b.filename)}/download" >${esc(t('download'))}</a>
+          <button class="btn btn-s" type="button" data-bk="restore" data-fn="${esc(b.filename)}" >${esc(t('restore'))}</button>
+          <button class="btn btn-s btn-d" type="button" data-bk="delete" data-fn="${esc(b.filename)}" >${esc(t('delete'))}</button>
         </div></div>`).join('');
     } catch (err) { el.innerHTML = `<div class="placeholder">${esc(err.message)}</div>`; }
   }
@@ -569,7 +681,6 @@
 
   // ---------- file manager ----------
 
-  const ICONS = { html: '🌐', htm: '🌐', css: '🎨', js: '⚡', mjs: '⚡', cjs: '⚡', jsx: '⚛️', tsx: '⚛️', ts: '📘', json: '📋', md: '📝', txt: '📄', py: '🐍', xml: '📰', svg: '🖼️', png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', webp: '🖼️', ico: '🖼️', yml: '⚙️', yaml: '⚙️', toml: '⚙️', sh: '🔧', sql: '🗃️', db: '🗃️', csv: '📊', env: '🔐' };
   const MODES = { html: 'htmlmixed', htm: 'htmlmixed', css: 'css', js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript', ts: 'text/typescript', tsx: 'text/typescript', json: { name: 'javascript', json: true }, py: 'python', md: 'markdown', xml: 'xml', svg: 'xml', sql: 'sql', sh: 'shell', bash: 'shell', yml: 'yaml', yaml: 'yaml', dockerfile: 'dockerfile' };
 
   function extOf(p) {
@@ -605,10 +716,10 @@
     const pad = 10 + depth * 12;
     return items.map((i) => {
       if (i.type === 'dir') {
-        return `<button type="button" class="ft-d" style="padding-left:${pad}px" data-dir="${esc(i.path)}"><span class="ar">▾</span>📁 ${esc(i.name)}</button><div class="ft-ch">${renderTree(i.children || [], depth + 1)}</div>`;
+        return `<button type="button" class="ft-d" style="padding-left:${pad}px" data-dir="${esc(i.path)}"><span class="ar">▾</span>${esc(i.name)}</button><div class="ft-ch">${renderTree(i.children || [], depth + 1)}</div>`;
       }
       const act = state.file && state.file.path === i.path ? ' act' : '';
-      return `<button type="button" class="ft-i${act}" style="padding-left:${pad}px" data-file="${esc(i.path)}" title="${esc(i.path)} · ${fmtSize(i.size)}"><span>${ICONS[i.ext] || '📄'}</span>${esc(i.name)}</button>`;
+      return `<button type="button" class="ft-i${act}" style="padding-left:${pad}px" data-file="${esc(i.path)}" title="${esc(i.path)} · ${fmtSize(i.size)}">${esc(i.name)}</button>`;
     }).join('');
   }
 

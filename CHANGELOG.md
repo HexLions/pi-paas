@@ -23,7 +23,9 @@
 - File upload and download in the file manager; the editor refuses to overwrite a file changed on disk.
 - Log auto-refresh, clear and rotation.
 - Header with CPU temperature, load, memory and free disk.
-- Six languages (en, it, es, fr, de, ja), light theme, mobile layout, app filter.
+- New panel design: the port range drawn as a pin header (one lit pin per app, coloured by state), apps as a list with a "More" menu, a light board-green theme with a matching dark one, no emoji or all-caps labels.
+- Drop a .zip or .html anywhere on the panel to start a deploy with it.
+- Six languages (en, it, es, fr, de, ja), light and dark theme, mobile layout, app filter.
 - CodeMirror is served locally: the panel works without internet access.
 - The panel works behind a reverse proxy under a sub-path (relative URLs).
 - Configuration through environment variables (`PIPAAS_*`), `cli.js set-password`.

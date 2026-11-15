@@ -17,8 +17,8 @@
   <!-- Login -->
   <section id="login" class="login" hidden>
     <form id="loginForm" class="login-card">
-      <div class="logo big">π</div>
-      <h1>Pi-<b>PaaS</b></h1>
+      <span class="mark big" aria-hidden="true">π</span>
+      <h1 class="wordmark">Pi-PaaS</h1>
       <label for="loginPw" data-i18n="password">Password</label>
       <input id="loginPw" type="password" autocomplete="current-password" required autofocus>
       <button class="btn btn-p wide" type="submit" data-i18n="login">Log in</button>
@@ -29,36 +29,52 @@
 
   <!-- Panel -->
   <div id="panel" hidden>
-    <header class="hdr">
-      <div class="hdr-l">
-        <div class="logo">π</div>
-        <h1>Pi-<b>PaaS</b></h1>
+    <header class="top">
+      <div class="brand">
+        <span class="mark" aria-hidden="true">π</span>
+        <span class="wordmark">Pi-PaaS</span>
         <span class="ver" id="ver"></span>
       </div>
-      <div class="stats" id="stats" aria-live="polite"></div>
-      <div class="hdr-r">
+      <dl class="stats" id="stats" aria-live="polite"></dl>
+      <div class="top-actions">
         <select id="langSel" class="sel" aria-label="Language"></select>
-        <button class="btn btn-s icon" id="themeBtn" type="button" aria-label="Theme">◐</button>
-        <button class="btn btn-s" id="pwBtn" type="button" data-i18n="changePassword">Password</button>
-        <button class="btn btn-s" id="logoutBtn" type="button" data-i18n="logout">Log out</button>
+        <button class="btn ghost icon" id="themeBtn" type="button" aria-label="Theme">◐</button>
+        <button class="btn ghost" id="pwBtn" type="button" data-i18n="changePassword">Password</button>
+        <button class="btn ghost" id="logoutBtn" type="button" data-i18n="logout">Log out</button>
       </div>
     </header>
 
     <div class="banner warn" id="pwBanner" hidden>
       <span data-i18n="initialPwBanner"></span>
-      <button class="btn btn-s" type="button" id="pwBannerBtn" data-i18n="changePassword"></button>
+      <button class="btn small" type="button" id="pwBannerBtn" data-i18n="changePassword"></button>
     </div>
 
     <main class="main">
+      <section class="header-pins" aria-labelledby="pinsTitle">
+        <div class="pins-head">
+          <h2 id="pinsTitle" data-i18n="ports">Ports</h2>
+          <p class="pins-sum" id="pinsSum"></p>
+        </div>
+        <div class="pins" id="pins" role="list"></div>
+        <ul class="pins-legend">
+          <li><i class="pin s-running"></i><span data-i18n="statusRunning"></span></li>
+          <li><i class="pin s-stopped"></i><span data-i18n="statusStopped"></span></li>
+          <li><i class="pin s-busy"></i><span data-i18n="statusBusy"></span></li>
+          <li><i class="pin s-crashed"></i><span data-i18n="statusCrashed"></span></li>
+          <li><i class="pin s-system"></i><span data-i18n="portOther"></span></li>
+        </ul>
+      </section>
+
       <div class="bar">
-        <h2><span data-i18n="apps">Applications</span> <span class="cnt" id="cnt">(0)</span></h2>
+        <h2><span data-i18n="apps">Applications</span> <span class="cnt" id="cnt"></span></h2>
         <div class="bar-r">
           <input id="filter" class="filter" type="search" data-i18n-ph="filterPh" aria-label="Filter">
-          <button class="btn btn-p" id="deployBtn" type="button">+ <span data-i18n="deployApp">Deploy App</span></button>
+          <button class="btn primary" id="deployBtn" type="button" data-i18n="deployApp">Deploy app</button>
         </div>
       </div>
-      <div id="list" class="grid"></div>
+      <div id="list" class="apps" role="list"></div>
     </main>
+    <div class="dropzone" id="dropzone" hidden><p data-i18n="dropHere"></p></div>
   </div>
 
   <!-- Deploy -->
@@ -88,7 +104,7 @@
       <div class="port-info" id="dPortInfo"></div>
     </div>
     <div class="fg"><label data-i18n="projectFile"></label>
-      <label class="uz" id="dZone"><input type="file" id="dFile" accept=".zip,.html,.htm"><span class="uz-i">📁</span><span class="uz-t" data-i18n-html="uploadText"></span><span class="uz-f" id="dFn"></span></label>
+      <label class="uz" id="dZone"><input type="file" id="dFile" accept=".zip,.html,.htm"><span class="uz-t" data-i18n-html="uploadText"></span><span class="uz-f" id="dFn"></span></label>
     </div>
     <button class="btn btn-p wide" type="submit" id="dBtn" data-i18n="deploy"></button>
   </form></div>
@@ -102,7 +118,7 @@
       <div class="port-info" id="uPortInfo"></div>
     </div>
     <div class="fg"><label data-i18n="newFile"></label>
-      <label class="uz" id="uZone"><input type="file" id="uFile" accept=".zip,.html,.htm"><span class="uz-i">📁</span><span class="uz-t" data-i18n-html="uploadNewText"></span><span class="uz-f" id="uFn"></span></label>
+      <label class="uz" id="uZone"><input type="file" id="uFile" accept=".zip,.html,.htm"><span class="uz-t" data-i18n-html="uploadNewText"></span><span class="uz-f" id="uFn"></span></label>
     </div>
     <p class="help" data-i18n="dataPreserved"></p>
     <button class="btn btn-p wide" type="submit" id="uBtn" data-i18n="uploadUpdate"></button>
@@ -132,16 +148,16 @@
 
   <!-- File manager -->
   <div class="ov" id="eMod" role="dialog" aria-modal="true"><div class="mod editor-mod">
-    <div class="ed-hdr"><h2>📂 <span id="eApp" class="accent"></span></h2><button class="mod-x static" type="button" data-close>×</button></div>
+    <div class="ed-hdr"><h2><span id="eApp"></span></h2><button class="mod-x static" type="button" data-close>×</button></div>
     <div class="fm">
       <nav class="ft" id="fTree"></nav>
       <div class="fe">
         <div class="et" id="eTb" hidden>
           <div class="ef"><span id="eFn"></span><span id="eUn"></span><span class="lb" id="eLn"></span></div>
           <div class="ea">
-            <a class="btn btn-s" id="eDl" data-i18n-title="download">⬇</a>
+            <a class="btn btn-s" id="eDl" data-i18n="download"></a>
             <button class="btn btn-s" type="button" id="eS" disabled data-i18n="save"></button>
-            <button class="btn btn-s btn-d" type="button" id="eDel" data-i18n-title="deleteFileBtn">🗑</button>
+            <button class="btn btn-s btn-d" type="button" id="eDel" data-i18n="delete"></button>
           </div>
         </div>
         <div id="ec" hidden></div>
