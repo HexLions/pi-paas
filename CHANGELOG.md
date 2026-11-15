@@ -27,6 +27,9 @@
 - SQL console for each app's SQLite or PostgreSQL database: read-only unless an admin allows changes.
 - Live logs (Server-Sent Events) and search across the current and previous log.
 
+### Security
+- Hardened after an internal review of 1.2.0: role checks use the same path the router matches (no bypass by letter case or a trailing slash); the SQL console refuses psql backslash commands, takes the SQL on stdin, recognises hidden extra statements (block comments, dollar quoting, E'' strings) and no longer falls back to the sqlite3 program; code from git or a backup may not carry links pointing outside the app, and the panel never chmods or writes through links; git clones run as the app user; replacing an active second factor needs the password; push subscriptions only to real push services, at most 10 per user; webhook secrets only in headers; the panel trusts X-Forwarded-For from its own proxy; scheduled tasks run inside the container in the Docker Edition.
+
 ### Panel
 - Installable as an app on phones and computers (over HTTPS), with push notifications.
 - Self-update from GitHub releases, from the panel.

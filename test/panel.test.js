@@ -63,7 +63,7 @@ describe('web push', () => {
     const p = new push.Push({ pushFile: path.join(d, 'push.json') }).load();
     const ua = crypto.createECDH('prime256v1');
     ua.generateKeys();
-    const sub = { endpoint: 'https://push.example.net/x', keys: { p256dh: ua.getPublicKey().toString('base64url'), auth: crypto.randomBytes(16).toString('base64url') } };
+    const sub = { endpoint: 'https://fcm.googleapis.com/fcm/send/x', keys: { p256dh: ua.getPublicKey().toString('base64url'), auth: crypto.randomBytes(16).toString('base64url') } };
     assert.throws(() => p.subscribe({ endpoint: 'http://insecure', keys: sub.keys }, 'admin'), /Invalid/);
     p.subscribe(sub, 'admin');
     const real = globalThis.fetch;

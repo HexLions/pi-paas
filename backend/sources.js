@@ -61,10 +61,10 @@ function parseSource({ file, gitUrl, gitBranch, gitToken, gitSubdir, template })
  * Credentials for https git go in through git's config environment
  * (GIT_CONFIG_COUNT), never on the command line or in .git/config.
  */
-function gitEnv(source) {
+function gitEnv(source, home = null) {
   const env = {
     PATH: process.env.PATH,
-    HOME: process.env.HOME || '/root',
+    HOME: home || process.env.HOME || '/root',
     GIT_TERMINAL_PROMPT: '0',
     GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new',
     GIT_CONFIG_NOSYSTEM: '1',
@@ -78,15 +78,21 @@ function gitEnv(source) {
   return env;
 }
 
-async function cloneGit(source, dest, onOutput) {
+/**
+ * Clone as the app user when there is one (its own HOME and SSH keys), so
+ * the repository's content never meets root's credentials.
+ */
+async function cloneGit(source, dest, onOutput, runAs = null, homeDir = null) {
   const tmp = `${dest}.clone-${Date.now()}`;
   await fs.remove(tmp);
+  const as = runAs ? { uid: runAs.uid, gid: runAs.gid } : {};
+  const env = gitEnv(source, runAs ? homeDir : null);
   try {
     await run('git', ['clone', '--depth', '1', '--single-branch', '--no-tags', '--branch', source.branch, '--', source.url, tmp], {
-      env: gitEnv(source), timeout: 10 * 60000, onOutput,
+      env, timeout: 10 * 60000, onOutput, ...as,
     });
-    const { stdout } = await run('git', ['-C', tmp, 'rev-parse', 'HEAD'], { env: gitEnv(source) });
-    const { stdout: msg } = await run('git', ['-C', tmp, 'log', '-1', '--format=%s'], { env: gitEnv(source) }).catch(() => ({ stdout: '' }));
+    const { stdout } = await run('git', ['-C', tmp, 'rev-parse', 'HEAD'], { env, ...as });
+    const { stdout: msg } = await run('git', ['-C', tmp, 'log', '-1', '--format=%s'], { env, ...as }).catch(() => ({ stdout: '' }));
     await fs.remove(path.join(tmp, '.git'));
     const from = source.subdir ? safeResolve(tmp, source.subdir) : tmp;
     if (!(await fs.pathExists(from))) throw new Error(`Folder "${source.subdir}" not found in the repository`);
@@ -99,7 +105,7 @@ async function cloneGit(source, dest, onOutput) {
 }
 
 /** Put the code into dest (which must not exist yet or will be replaced). */
-async function materialize(source, dest, { file, onOutput } = {}) {
+async function materialize(source, dest, { file, onOutput, runAs = null, homeDir = null } = {}) {
   await fs.remove(dest);
   if (source.type === 'upload') {
     await fs.ensureDir(dest);
@@ -118,18 +124,19 @@ async function materialize(source, dest, { file, onOutput } = {}) {
     await fs.copy(path.join(TEMPLATES_DIR, source.template, 'files'), dest);
     return {};
   }
-  if (source.type === 'git') return cloneGit(source, dest, onOutput);
+  if (source.type === 'git') return cloneGit(source, dest, onOutput, runAs, homeDir);
   throw new Error(`Unknown source ${source.type}`);
 }
 
-/** Check a webhook call: GitHub/Gitea signature, GitLab token, or ?token=. */
+/** Check a webhook call: GitHub/Gitea signature or GitLab token. */
 function verifyHook(req, secret) {
   const sig = req.get('X-Hub-Signature-256') || req.get('X-Gitea-Signature') && `sha256=${req.get('X-Gitea-Signature')}`;
   if (sig && req.rawBody) {
     const want = `sha256=${crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex')}`;
     return sig.length === want.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want));
   }
-  const token = req.get('X-Gitlab-Token') || (typeof req.query.token === 'string' ? req.query.token : '');
+  // Header only: a secret in the query string ends up in access logs.
+  const token = req.get('X-Gitlab-Token') || '';
   if (token) return token.length === secret.length && crypto.timingSafeEqual(Buffer.from(token), Buffer.from(secret));
   return false;
 }

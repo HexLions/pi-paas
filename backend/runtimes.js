@@ -4,7 +4,7 @@
 // involved except for a user's own custom start command.
 const fs = require('fs-extra');
 const path = require('path');
-const { commandExists } = require('./util');
+const { commandExists, isPlainFile } = require('./util');
 
 const STATIC_SERVER = path.join(__dirname, 'static-server.js');
 
@@ -36,20 +36,21 @@ function readJson(file) {
 
 /** Executable files at the top of the folder: candidates for a "binary" app. */
 function findBinary(appDir) {
+  // lstat: a symlink is never "the program" (root would chmod its target).
   for (const name of ['app', 'server', 'main', 'start']) {
-    const f = path.join(appDir, name);
-    try {
-      const st = fs.statSync(f);
-      if (st.isFile()) return name;
-    } catch { /* not there */ }
+    if (isPlainFile(path.join(appDir, name))) return name;
   }
   const execs = fs.readdirSync(appDir).filter((n) => {
     try {
-      const st = fs.statSync(path.join(appDir, n));
+      const st = fs.lstatSync(path.join(appDir, n));
       return st.isFile() && (st.mode & 0o111) && !/\.(sh|txt|md|json|ya?ml|toml|html?)$/i.test(n);
     } catch { return false; }
   });
   return execs.length === 1 ? execs[0] : null;
+}
+
+function isLink(p) {
+  try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; }
 }
 
 function dockerName(id) {
@@ -222,7 +223,7 @@ function extraBuildSteps(appDir, app, id) {
   if (app.type === 'docker') {
     let file = 'Dockerfile';
     if (app.sourceType) file = prepareContainerBuild(appDir, app);
-    else if (!has('Dockerfile')) throw new Error('A Dockerfile is needed at the top of the project');
+    else if (!isPlainFile(path.join(appDir, 'Dockerfile'))) throw new Error('A Dockerfile (a regular file, not a link) is needed at the top of the project');
     steps.push(['docker', ['build', '--pull', '-f', file, '-t', `${dockerName(id)}:latest`, '.'], { asPanel: true }]);
   }
   return steps;
@@ -284,9 +285,14 @@ function containerApp(app, cfg) {
 /** Write the generated Dockerfile (and the static server it may need) into the build folder. */
 function prepareContainerBuild(appDir, app) {
   const own = path.join(appDir, 'Dockerfile');
-  if (fs.existsSync(own)) return 'Dockerfile';
+  if (fs.existsSync(own) || isLink(own)) {
+    if (!isPlainFile(own)) throw new Error('The Dockerfile must be a regular file, not a link');
+    return 'Dockerfile';
+  }
+  // Start from a fresh folder: a .pipaas link from the repository must not be followed.
   const dir = path.join(appDir, '.pipaas');
-  fs.ensureDirSync(dir);
+  fs.removeSync(dir);
+  fs.mkdirSync(dir);
   fs.copyFileSync(STATIC_SERVER, path.join(dir, 'static-server.js'));
   fs.writeFileSync(path.join(dir, 'Dockerfile'), `${generatedDockerfile({ type: app.sourceType || app.type })}\n`);
   return '.pipaas/Dockerfile';

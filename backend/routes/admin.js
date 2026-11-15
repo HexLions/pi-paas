@@ -11,7 +11,13 @@ function routes(app, { auth, settings, notifier, wrap }) {
 
   // ----- own 2FA -----
   app.post('/api/auth/totp', (req, res) => {
-    res.json(auth.startTotp(self(req)));
+    const name = self(req);
+    const u = auth.user(name);
+    // Replacing a second factor that is already on needs the password, like turning it off.
+    if (u && u.totp && u.totp.enabled && !auth.checkPassword((req.body || {}).password, name)) {
+      throw new HttpError(401, 'Enter your password to replace two-step login');
+    }
+    res.json(auth.startTotp(name));
   });
   app.put('/api/auth/totp', (req, res) => {
     auth.enableTotp(self(req), (req.body || {}).code);

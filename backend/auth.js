@@ -123,6 +123,7 @@ class Auth {
       const raw = fs.readJsonSync(this.cfg.authFile);
       this.state = migrate(raw);
       if (raw !== this.state) this.save();
+      this.mtime = fs.statSync(this.cfg.authFile).mtimeMs;
       return this;
     }
     this.state = { version: 2, secret: crypto.randomBytes(32).toString('hex'), users: {}, tokens: [] };
@@ -142,11 +143,24 @@ class Auth {
     fs.writeJsonSync(tmp, this.state, { spaces: 2, mode: 0o600 });
     fs.chmodSync(tmp, 0o600);
     fs.renameSync(tmp, this.cfg.authFile);
+    this.mtime = fs.statSync(this.cfg.authFile).mtimeMs;
+  }
+
+  /** Pick up edits made by cli.js while the panel runs (set-password, reset-2fa). */
+  refresh() {
+    try {
+      const m = fs.statSync(this.cfg.authFile).mtimeMs;
+      if (this.mtime && m !== this.mtime) {
+        this.state = migrate(fs.readJsonSync(this.cfg.authFile));
+        this.mtime = m;
+      }
+    } catch { /* file briefly missing during a rename */ }
   }
 
   // ---------- users ----------
 
   user(name) {
+    this.refresh();
     return Object.prototype.hasOwnProperty.call(this.state.users, name) ? this.state.users[name] : null;
   }
 

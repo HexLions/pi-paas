@@ -7,8 +7,9 @@ const { HttpError } = require('../util');
 const { roleRank } = require('../auth');
 
 const MAX_STREAMS = 50;
-const SEARCH_BYTES = 20 * 1024 * 1024;
+const SEARCH_BYTES = 8 * 1024 * 1024;
 let streams = 0;
+let searching = false;
 
 function routes(app, { cfg, service, backups, wrap }) {
   // ----- SQL console -----
@@ -31,6 +32,10 @@ function routes(app, { cfg, service, backups, wrap }) {
     service.mustGet(req.params.id);
     if (streams >= MAX_STREAMS) throw new HttpError(429, 'Too many open log streams');
     streams += 1;
+    // Release the slot however the stream ends, even if the first read fails.
+    let released = false;
+    const release = () => { if (!released) { released = true; streams -= 1; } };
+    req.on('close', release);
     const file = path.join(cfg.logDir, `${req.params.id}.log`);
     res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no', Connection: 'keep-alive' });
     res.flushHeaders();
@@ -72,7 +77,7 @@ function routes(app, { cfg, service, backups, wrap }) {
     };
     const poll = setInterval(tick, 1000);
     const ping = setInterval(() => res.write(': ping\n\n'), 20000);
-    req.on('close', () => { clearInterval(poll); clearInterval(ping); streams -= 1; });
+    req.on('close', () => { clearInterval(poll); clearInterval(ping); });
   }));
 
   // ----- log search -----
@@ -81,6 +86,10 @@ function routes(app, { cfg, service, backups, wrap }) {
     const q = String(req.query.q || '');
     if (!q || q.length > 200) throw new HttpError(400, 'Search for 1 to 200 characters');
     const limit = Math.min(Number.parseInt(req.query.limit, 10) || 300, 1000);
+    // One search at a time: each reads up to 2 x 8 MB on a small machine.
+    if (searching) throw new HttpError(429, 'Another log search is running, try again in a moment');
+    searching = true;
+    try {
     const needle = q.toLowerCase();
     const matches = [];
     let total = 0;
@@ -105,6 +114,9 @@ function routes(app, { cfg, service, backups, wrap }) {
       });
     }
     res.json({ matches: matches.slice(-limit), total, truncated: total > limit });
+    } finally {
+      searching = false;
+    }
   }));
 
   // ----- backups: verification and offsite copies -----

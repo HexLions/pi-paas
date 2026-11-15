@@ -131,7 +131,15 @@ class Backups {
     const file = this.file(id, name);
     let result;
     try {
-      const { stdout } = await run('tar', ['-tzf', file], { timeout: 30 * 60000 });
+      // The listing goes to a file: run() keeps only the tail of what it captures.
+      const listFile = path.join(this.cfg.uploadDir, `verify-${id}-${Date.now()}.txt`);
+      let stdout;
+      try {
+        await run('tar', ['-tzf', file], { timeout: 30 * 60000, stdoutFile: listFile });
+        stdout = await fs.readFile(listFile, 'utf8');
+      } finally {
+        await fs.remove(listFile);
+      }
       const entries = stdout.split('\n').map((l) => l.replace(/^\.\//, ''));
       if (!entries.includes('meta.json')) throw new Error('meta.json is missing');
       if (!entries.some((e) => e.startsWith('files/'))) throw new Error('the app files are missing');

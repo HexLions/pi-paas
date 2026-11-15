@@ -90,7 +90,12 @@ class Jobs {
     let code = 0;
     let error = null;
     try {
-      await run('/bin/sh', ['-c', job.command], {
+      // Docker Edition: the task runs inside the app's container, not next to the Docker socket.
+      if (this.cfg.containerMode) {
+        await run('docker', ['exec', `pipaas-${id}`, 'sh', '-c', job.command], {
+          timeout: TIMEOUT_MS, onOutput: (chunk) => this.pm.appendLog(id, chunk),
+        });
+      } else await run('/bin/sh', ['-c', job.command], {
         cwd: path.join(this.cfg.appsDir, id),
         env: appEnv(this.cfg, id, app),
         timeout: TIMEOUT_MS,

@@ -11,11 +11,11 @@ function routes(app, { push, updater, wrap }) {
   app.delete('/api/push/subscribe', (req, res) => {
     const endpoint = (req.body || {}).endpoint;
     if (typeof endpoint !== 'string') throw new HttpError(400, 'endpoint required');
-    push.unsubscribe(endpoint);
+    push.unsubscribe(endpoint, req.user.name);
     res.json({ ok: true });
   });
   app.post('/api/push/test', wrap(async (req, res) => {
-    await push.send('Pi-PaaS', 'Notifications on this device work.', { level: 'info' });
+    await push.send('Pi-PaaS', 'Notifications on this device work.', { level: 'info' }, { user: req.user.name });
     res.json({ ok: true });
   }));
 
