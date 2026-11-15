@@ -9,6 +9,8 @@ const { ProcessManager } = require('./processes');
 const { Backups } = require('./backups');
 const { AppService } = require('./apps');
 const { createHttpApp } = require('./http');
+const { Settings } = require('./settings');
+const { Notifier } = require('./notifier');
 const { run } = require('./util');
 
 async function resolveRunAs(cfg, log) {
@@ -36,11 +38,17 @@ async function createPanel({ cfg = config.load(), log = console } = {}) {
   const registry = new Registry(cfg.registryFile).load();
   const auth = new Auth(cfg, log);
   if (!cfg.authDisabled) auth.init();
-  const pm = new ProcessManager(cfg, registry, { log, runAs });
+  const settings = new Settings(cfg.settingsFile).load();
+  const notifier = new Notifier(settings, { log });
+  const pm = new ProcessManager(cfg, registry, { log, runAs, notifier });
   const backups = new Backups(cfg, registry, log);
-  const service = new AppService(cfg, registry, pm, backups, { log, runAs });
-  const app = createHttpApp({ cfg, auth, service, backups, log });
-  return { cfg, registry, auth, pm, backups, service, app };
+  const service = new AppService(cfg, registry, pm, backups, { log, runAs, notifier });
+  const ctx = {
+    cfg, registry, auth, pm, backups, service, settings, notifier, runAs, log,
+    modules: [require('./routes/admin')],
+  };
+  ctx.app = createHttpApp(ctx);
+  return ctx;
 }
 
 async function main() {

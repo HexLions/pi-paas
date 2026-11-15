@@ -4,7 +4,7 @@ const multer = require('multer');
 const fs = require('fs-extra');
 const os = require('os');
 const path = require('path');
-const { COOKIE, SESSION_DAYS, parseCookies, sessionCookie } = require('./auth');
+const { COOKIE, SESSION_DAYS, parseCookies, sessionCookie, roleRank } = require('./auth');
 const database = require('./database');
 const {
   HttpError, safeResolve, tailFile, looksBinary, writeFileAtomic,
@@ -18,7 +18,32 @@ function wrap(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
-function createHttpApp({ cfg, auth, service, backups, log = console }) {
+/**
+ * Minimum role per route. Viewers read, operators run apps, admins manage
+ * the panel. Handlers may check more (for example SQL writes).
+ */
+const ROLE_RULES = [
+  [null, /^\/api\/auth\//, 'viewer'],
+  [null, /^\/api\/tokens(\/|$)/, 'viewer'],
+  [null, /^\/api\/(users|settings|panel)(\/|$)/, 'admin'],
+  ['DELETE', /^\/api\/apps\/[^/]+$/, 'admin'],
+  ['GET', /^\/api\/apps\/[^/]+\/(settings|db|files|upload|jobs)(\/|$)/, 'operator'],
+  ['GET', /^\/api\/apps\/[^/]+\/backups\/[^/]+\/download$/, 'operator'],
+  ['GET', null, 'viewer'],
+  ['HEAD', null, 'viewer'],
+  [null, null, 'operator'],
+];
+
+function requiredRole(method, p) {
+  for (const [m, re, role] of ROLE_RULES) {
+    if ((m === null || m === method) && (re === null || re.test(p))) return role;
+  }
+  return 'admin';
+}
+
+function createHttpApp(ctx) {
+  const { cfg, auth, service, backups, log = console } = ctx;
+  const modules = ctx.modules || [];
   const app = express();
   app.disable('x-powered-by');
   if (cfg.trustProxy) app.set('trust proxy', 'loopback');
@@ -49,41 +74,59 @@ function createHttpApp({ cfg, auth, service, backups, log = console }) {
     },
   });
   const uploadAny = multer({ dest: cfg.uploadDir, limits: { fileSize: cfg.uploadLimitMb * 1024 * 1024, files: 1, fields: 5 } });
+  Object.assign(ctx, { upload, uploadAny, wrap });
 
-  // ---------- public ----------
+  // ---------- identity ----------
+
+  // Who is calling: a session cookie, an API token, or nobody.
+  app.use('/api', (req, res, next) => {
+    if (cfg.authDisabled) req.user = { name: 'admin', role: 'admin', via: 'none' };
+    else if (req.headers.authorization) req.user = auth.apiTokenUser(req.headers.authorization);
+    else req.user = auth.sessionUser(parseCookies(req.headers.cookie)[COOKIE]);
+    next();
+  });
 
   app.get('/api/health', (req, res) => res.json({ ok: true, version: cfg.version }));
 
-  const isAuthed = (req) => cfg.authDisabled || auth.verifyToken(parseCookies(req.headers.cookie)[COOKIE]);
-
   app.get('/api/auth/status', (req, res) => {
+    const u = req.user && auth.user(req.user.name);
     res.json({
-      authenticated: isAuthed(req),
+      authenticated: !!req.user,
       authRequired: !cfg.authDisabled,
       initialPassword: !cfg.authDisabled && fs.existsSync(cfg.initialPasswordFile),
+      user: req.user ? { name: req.user.name, role: req.user.role, totp: !!(u && u.totp && u.totp.enabled) } : null,
       version: cfg.version,
     });
   });
 
-  // Every state-changing API call must carry this header. Browsers refuse to
-  // send custom headers cross-site without CORS, which this server never grants.
+  // Routes with their own authentication (signed webhooks) go before the CSRF check.
+  for (const m of modules) if (m.public) m.public(app, ctx);
+
+  // Every state-changing call made with a cookie must carry this header. Browsers
+  // refuse to send custom headers cross-site without CORS, which is never granted.
+  // API tokens are not sent automatically by browsers, so they need no such check.
   app.use('/api', (req, res, next) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+    if (req.user && req.user.via === 'token') return next();
     if (req.get('X-PiPaaS') !== '1') return next(new HttpError(403, 'Missing X-PiPaaS header'));
     next();
   });
 
   app.post('/api/auth/login', (req, res) => {
-    const ip = req.ip || 'unknown';
-    if (auth.tooManyAttempts(ip)) throw new HttpError(429, 'Too many failed attempts, wait 15 minutes');
-    const password = req.body && req.body.password;
-    if (!auth.checkPassword(password)) {
-      auth.recordFailure(ip);
-      log.warn(`[auth] failed login from ${ip}`);
-      throw new HttpError(401, 'Wrong password');
+    const { username = 'admin', password, code } = req.body || {};
+    const name = String(username).trim().toLowerCase();
+    const key = `${req.ip || 'unknown'}|${name}`;
+    const ipKey = req.ip || 'unknown';
+    if (auth.tooManyAttempts(key) || auth.tooManyAttempts(ipKey)) throw new HttpError(429, 'Too many failed attempts, wait 15 minutes');
+    try {
+      auth.login(name, password, code);
+    } catch (err) {
+      if (!err.needCode || code) { auth.recordFailure(key); auth.recordFailure(ipKey); }
+      log.warn(`[auth] failed login for "${name}" from ${req.ip}`);
+      return res.status(err.status || 401).json({ error: err.message, needCode: !!err.needCode });
     }
-    auth.clearFailures(ip);
-    res.set('Set-Cookie', sessionCookie(auth.issueToken(), req, SESSION_DAYS * 86400));
+    auth.clearFailures(key);
+    res.set('Set-Cookie', sessionCookie(auth.issueToken(name), req, SESSION_DAYS * 86400));
     res.json({ ok: true });
   });
 
@@ -92,19 +135,27 @@ function createHttpApp({ cfg, auth, service, backups, log = console }) {
     res.json({ ok: true });
   });
 
-  // ---------- everything below needs a session ----------
+  // ---------- everything below needs a user with the right role ----------
 
-  app.use('/api', (req, res, next) => (isAuthed(req) ? next() : next(new HttpError(401, 'Login required'))));
+  app.use('/api', (req, res, next) => {
+    if (!req.user) return next(new HttpError(401, 'Login required'));
+    const need = requiredRole(req.method, req.path.startsWith('/api') ? req.path : `/api${req.path}`);
+    if (roleRank(req.user.role) < roleRank(need)) return next(new HttpError(403, `This needs the ${need} role`));
+    next();
+  });
 
   app.put('/api/auth/password', (req, res) => {
     if (cfg.authDisabled) throw new HttpError(400, 'Login is disabled (PIPAAS_AUTH=off)');
+    if (req.user.via === 'token') throw new HttpError(403, 'Use the panel to change a password');
     const { current, next } = req.body || {};
-    if (!auth.checkPassword(current)) throw new HttpError(401, 'Current password is wrong');
-    auth.setPassword(next);
-    fs.removeSync(cfg.initialPasswordFile);
-    res.set('Set-Cookie', sessionCookie(auth.issueToken(), req, SESSION_DAYS * 86400));
+    if (!auth.checkPassword(current, req.user.name)) throw new HttpError(401, 'Current password is wrong');
+    auth.updateUser(req.user.name, { password: next });
+    if (req.user.name === 'admin') fs.removeSync(cfg.initialPasswordFile);
+    res.set('Set-Cookie', sessionCookie(auth.issueToken(req.user.name), req, SESSION_DAYS * 86400));
     res.json({ ok: true });
   });
+
+  for (const m of modules) if (m.routes) m.routes(app, ctx);
 
   app.get('/api/system', wrap(async (req, res) => {
     res.json(await systemInfo(cfg));
@@ -355,4 +406,4 @@ async function systemInfo(cfg) {
   };
 }
 
-module.exports = { createHttpApp };
+module.exports = { createHttpApp, requiredRole, wrap, systemInfo };

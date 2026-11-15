@@ -118,7 +118,7 @@ async function startPanel(extraEnv = {}) {
     await fs.remove(dataDir);
   }
 
-  return { ...panel, base, req, login, close, dataDir, setCookie: (c) => { cookie = c; } };
+  return { ...panel, base, req, login, close, dataDir, setCookie: (c) => { cookie = c; }, cookie: () => cookie };
 }
 
 function zipForm(fields, filename, buf, field = 'zipfile') {
